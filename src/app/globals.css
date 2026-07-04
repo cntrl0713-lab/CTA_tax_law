@@ -918,38 +918,3 @@ a {
     padding: 24px;
   }
 }
-
-/* ── Google 로그인 버튼 ── */
-.btn-google {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 20px;
-  background: #ffffff;
-  border: 1px solid #dadce0;
-  border-radius: var(--radius-sm);
-  color: #3c4043;
-  font-family: var(--font-family);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-google:hover {
-  background: #f7f8f8;
-  border-color: #c6c6c6;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: translateY(-1px);
-}
-
-.btn-google:active {
-  background: #eeeeee;
-  transform: translateY(0);
-}
-
-.google-icon {
-  flex-shrink: 0;
-}

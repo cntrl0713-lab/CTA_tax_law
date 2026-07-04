@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { login } from './actions'
-import GoogleLoginButton from '@/components/GoogleLoginButton'
 
 export default async function LoginPage({
     searchParams,
@@ -49,13 +48,6 @@ export default async function LoginPage({
                     {params.message && (
                         <div className="form-message success">{params.message}</div>
                     )}
-
-                    {/* Google 로그인 버튼 */}
-                    <GoogleLoginButton />
-
-                    <div className="login-divider">
-                        <span>또는 이메일로 로그인</span>
-                    </div>
 
                     <form>
                         <div className="form-group">
