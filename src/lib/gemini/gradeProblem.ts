@@ -61,7 +61,7 @@ ${subquestionPrompts.join('\n---\n')}
 
     // ── Gemini 호출 (구조화 출력) ──
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: userPrompt,
         config: {
             systemInstruction: systemPrompt,

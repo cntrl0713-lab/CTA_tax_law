@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { gradeProblem } from '@/lib/gemini/gradeProblem'
 import type { GradeRequest } from '@/types/grading'
 import type { ProblemWithDetails } from '@/types/db'
@@ -34,8 +35,9 @@ export async function POST(request: Request) {
             }
         }
 
-        // 3. Supabase에서 문제/소문항/루브릭 조회
-        const { data: problem, error: problemError } = await supabase
+        // 3. Supabase에서 문제/소문항/루브릭 조회 (관리자 클라이언트로 RLS 우회)
+        const adminSupabase = createAdminClient()
+        const { data: problem, error: problemError } = await adminSupabase
             .from('problems')
             .select(`
         *,
