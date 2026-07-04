@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { login } from './actions'
+import { login, startAsGuest } from './actions'
 
 export default async function LoginPage({
     searchParams,
@@ -90,6 +90,12 @@ export default async function LoginPage({
                     <Link href="/signup" className="btn btn-signup">
                         ✨ 새 계정 만들기
                     </Link>
+
+                    <form style={{ marginTop: '12px' }}>
+                        <button className="btn btn-guest" formAction={startAsGuest}>
+                            👤 비회원으로 시작하기
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>

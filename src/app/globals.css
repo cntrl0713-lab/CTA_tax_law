@@ -918,3 +918,27 @@ a {
     padding: 24px;
   }
 }
+
+.btn-guest {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  background: transparent;
+  border: 1px dashed var(--accent-primary);
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary-hover);
+  font-family: var(--font-family);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.btn-guest:hover {
+  background: rgba(108, 92, 231, 0.05);
+  border-color: var(--accent-primary-hover);
+  transform: translateY(-1px);
+}

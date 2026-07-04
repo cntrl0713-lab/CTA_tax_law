@@ -27,3 +27,15 @@ export async function login(formData: FormData) {
     redirect('/')
 }
 
+export async function startAsGuest() {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.signInAnonymously()
+
+    if (error) {
+        redirect('/login?error=' + encodeURIComponent(error.message))
+    }
+
+    revalidatePath('/', 'layout')
+    redirect('/')
+}
+
