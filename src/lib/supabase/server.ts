@@ -4,6 +4,10 @@ import { cookies } from 'next/headers'
 export async function createClient() {
     const cookieStore = await cookies()
 
+    // 환경변수 바인딩 상태 디버그 로깅
+    console.log('[SUPABASE CLIENT DEBUG] URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log('[SUPABASE CLIENT DEBUG] Anon Key:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '존재함' : '누락됨')
+
     return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
