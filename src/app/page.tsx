@@ -1,66 +1,67 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import type { SubjectWithCount } from '@/types/db'
 
-export default function Home() {
+export default async function HomePage() {
+  const supabase = await createClient()
+
+  // 과목 목록 + 문제 수 조회
+  const { data: subjects } = await supabase
+    .from('subjects')
+    .select('*')
+    .order('id')
+
+  // 과목별 문제 수 조회
+  const { data: allProblems } = await supabase
+    .from('problems')
+    .select('subject_id')
+
+  const countMap: Record<number, number> = {}
+  allProblems?.forEach((p) => {
+    countMap[p.subject_id] = (countMap[p.subject_id] || 0) + 1
+  })
+
+  const subjectsWithCount: SubjectWithCount[] = (subjects || []).map((s) => ({
+    ...s,
+    problem_count: countMap[s.id] || 0,
+  }))
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+    <>
+      <section className="hero">
+        <h1>세무사 세법 AI 채점</h1>
+        <p>
+          세법 사례형 문제를 풀고, AI가 루브릭 기반으로 즉시 채점합니다.
+          소문항별 상세 피드백으로 실력을 키워보세요.
+        </p>
+      </section>
+
+      <div className="container">
+        <h2 className="section-title">📚 과목 선택</h2>
+        {subjectsWithCount.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">📭</div>
+            <p>등록된 과목이 없습니다.</p>
+          </div>
+        ) : (
+          <div className="grid grid-2">
+            {subjectsWithCount.map((subject) => (
+              <Link
+                key={subject.id}
+                href={`/subjects/${subject.id}`}
+                className="card-link"
+              >
+                <div className="card subject-card">
+                  <div className="subject-name">{subject.name}</div>
+                  <div className="subject-count">
+                    {subject.problem_count}개 문제
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
 }
