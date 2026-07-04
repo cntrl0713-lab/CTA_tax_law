@@ -21,11 +21,11 @@ export default function GradingResult({ result }: GradingResultProps) {
                 <div className="result-overall-comment">{result.overallComment}</div>
             </div>
 
-            {/* 소문항별 결과 */}
+            {/* 물음별 결과 */}
             {result.subquestions.map((sq) => (
                 <div key={sq.number} className="result-subquestion">
                     <div className="result-sq-header">
-                        <span className="subquestion-number">소문항 {sq.number}</span>
+                        <span className="subquestion-number">물음 {sq.number}</span>
                         <span className="result-sq-score">
                             {sq.awardedScore} / {sq.maxScore}점
                         </span>

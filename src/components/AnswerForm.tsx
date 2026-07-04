@@ -27,7 +27,7 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
 
         if (emptySubquestions.length > 0) {
             setError(
-                `소문항 ${emptySubquestions.map((sq) => sq.number).join(', ')}번의 답안이 너무 짧습니다. (최소 10자)`
+                `물음 ${emptySubquestions.map((sq) => sq.number).join(', ')}번의 답안이 너무 짧습니다. (최소 10자)`
             )
             return
         }
@@ -65,11 +65,11 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
 
     return (
         <>
-            {/* 소문항별 답안 입력 */}
+            {/* 물음별 답안 입력 */}
             {problem.subquestions.map((sq) => (
                 <div key={sq.id} className="subquestion">
                     <div className="subquestion-header">
-                        <span className="subquestion-number">소문항 {sq.number}</span>
+                        <span className="subquestion-number">물음 {sq.number}</span>
                         <span className="subquestion-score">배점: {sq.score}점</span>
                     </div>
                     {(sq.prompt_text_full || sq.prompt_text_compact) && (
@@ -79,7 +79,7 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
                     )}
                     <textarea
                         className="answer-textarea"
-                        placeholder={`소문항 ${sq.number}에 대한 답안을 작성하세요...`}
+                        placeholder={`물음 ${sq.number}에 대한 답안을 작성하세요...`}
                         value={answers[sq.number] || ''}
                         onChange={(e) => handleAnswerChange(sq.number, e.target.value)}
                         disabled={loading}

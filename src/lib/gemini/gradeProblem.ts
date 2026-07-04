@@ -23,7 +23,7 @@ export async function gradeProblem(
             .join('\n')
 
         return `
-### 소문항 ${sq.number} (배점: ${sq.score}점)
+### 물음 ${sq.number} (배점: ${sq.score}점)
 문제: ${sq.prompt_text_full || sq.prompt_text_compact || '(문제 텍스트 없음)'}
 
 채점 루브릭:
@@ -38,7 +38,7 @@ ${answer?.answerText || '(답안 미작성)'}
 아래의 세법 문제에 대한 수험생 답안을 채점해 주세요.
 
 채점 원칙:
-1. 각 소문항의 배점을 절대 초과하지 마세요.
+1. 각 물음의 배점을 절대 초과하지 마세요.
 2. 각 루브릭 기준별로 배점 내에서 점수를 부여하세요.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
@@ -50,8 +50,8 @@ ${answer?.answerText || '(답안 미작성)'}
 제목: ${problem.title}
 총 배점: ${problem.total_score}점
 
-### 사례문
-${problem.case_text_full || problem.case_text_compact || '(사례문 없음)'}
+### 사실관계
+${problem.case_text_full || problem.case_text_compact || '(사실관계 없음)'}
 
 ### 쟁점
 ${problem.issue_text_full || problem.issue_text_compact || '(쟁점 없음)'}
@@ -75,10 +75,10 @@ ${subquestionPrompts.join('\n---\n')}
                         items: {
                             type: Type.OBJECT,
                             properties: {
-                                number: { type: Type.NUMBER, description: '소문항 번호' },
+                                number: { type: Type.NUMBER, description: '물음 번호' },
                                 awardedScore: { type: Type.NUMBER, description: '획득 점수' },
                                 maxScore: { type: Type.NUMBER, description: '배점' },
-                                feedback: { type: Type.STRING, description: '소문항별 피드백' },
+                                feedback: { type: Type.STRING, description: '물음별 피드백' },
                                 rubricResults: {
                                     type: Type.ARRAY,
                                     items: {

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import type { ProblemWithDetails } from '@/types/db'
 import AnswerForm from '@/components/AnswerForm'
@@ -10,7 +10,7 @@ export default async function ProblemPage({
     params: Promise<{ problemId: string }>
 }) {
     const { problemId } = await params
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // 문제 + 소문항 + 루브릭 전체 조회
     const { data: problem } = await supabase
@@ -53,14 +53,14 @@ export default async function ProblemPage({
             <div className="problem-header">
                 <h1>{typedProblem.title}</h1>
                 <div className="meta">
-                    총 배점: {typedProblem.total_score}점 · 소문항 {typedProblem.subquestions.length}개
+                    총 배점: {typedProblem.total_score}점 · 물음 {typedProblem.subquestions.length}개
                 </div>
             </div>
 
-            {/* 사례문 */}
+            {/* 사실관계 */}
             {(typedProblem.case_text_full || typedProblem.case_text_compact) && (
                 <div>
-                    <div className="case-text-label">📄 사례문</div>
+                    <div className="case-text-label">📄 사실관계</div>
                     <div className="case-text">
                         {typedProblem.case_text_full || typedProblem.case_text_compact}
                     </div>

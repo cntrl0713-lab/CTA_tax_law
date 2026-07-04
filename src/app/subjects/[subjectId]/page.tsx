@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 
 export default async function SubjectPage({
@@ -8,7 +8,7 @@ export default async function SubjectPage({
     params: Promise<{ subjectId: string }>
 }) {
     const { subjectId } = await params
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // 과목 정보 조회
     const { data: subject } = await supabase

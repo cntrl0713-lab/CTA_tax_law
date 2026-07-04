@@ -1,9 +1,9 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { SubjectWithCount } from '@/types/db'
 
 export default async function HomePage() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // 과목 목록 + 문제 수 조회
   const { data: subjects } = await supabase
