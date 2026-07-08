@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CTA Tax Law — AI 세법 채점',
+  title: '세법학 — AI 세법 채점',
   description: '세무사 시험 세법 문제를 AI가 실시간 채점합니다.',
 }
 
@@ -22,7 +22,7 @@ export default async function RootLayout({
       <body>
         <nav className="navbar">
           <Link href="/" className="navbar-brand">
-            📝 CTA Tax Law <span>AI 채점</span>
+            📝 세법학 <span>AI 채점</span>
           </Link>
           <div className="navbar-actions">
             {user ? (

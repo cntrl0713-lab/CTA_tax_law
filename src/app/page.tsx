@@ -31,7 +31,7 @@ export default async function HomePage() {
       <section className="hero">
         <h1>세무사 세법 AI 채점</h1>
         <p>
-          세법 사례형 문제를 풀고, AI가 루브릭 기반으로 즉시 채점합니다.
+          세법 사례형 문제를 풀고, AI가 설정된 채점 기준에 따라 즉시 부분 채점합니다.
           소문항별 상세 피드백으로 실력을 키워보세요.
         </p>
       </section>

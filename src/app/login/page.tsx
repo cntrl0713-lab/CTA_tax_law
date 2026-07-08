@@ -17,8 +17,8 @@ export default async function LoginPage({
                     세법 AI 채점 플랫폼
                 </h1>
                 <p className="landing-hero-desc">
-                    사례형 세법 문제를 풀고, AI가 루브릭 기반으로<br />
-                    즉시 채점하고 상세 피드백을 제공합니다.
+                    사례형 세법 문제를 풀고, AI가 설정된 채점 기준에 따라<br />
+                    즉시 부분 채점하고 상세 피드백을 제공합니다.
                 </p>
                 <div className="landing-features">
                     <div className="landing-feature">
@@ -27,7 +27,7 @@ export default async function LoginPage({
                     </div>
                     <div className="landing-feature">
                         <span className="landing-feature-icon">🤖</span>
-                        <span>AI 루브릭 채점</span>
+                        <span>AI 부분 채점</span>
                     </div>
                     <div className="landing-feature">
                         <span className="landing-feature-icon">💡</span>

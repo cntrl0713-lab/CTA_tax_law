@@ -70,7 +70,7 @@ export default async function ProblemPage({
             {/* 쟁점 */}
             {(typedProblem.issue_text_full || typedProblem.issue_text_compact) && (
                 <div>
-                    <div className="case-text-label">⚖️ 쟁점</div>
+                    <div className="case-text-label">⚖️ 과세관청 처분(또는 쟁점)</div>
                     <div className="case-text">
                         {typedProblem.issue_text_full || typedProblem.issue_text_compact}
                     </div>
