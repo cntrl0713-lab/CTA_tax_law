@@ -294,8 +294,33 @@ export default async function ProblemResultPage({ params }: PageProps) {
                                     const matchedRubric = feedbackData?.rubricResults?.find(
                                         (rr) => rr.criterionName === rubric.criterion_name
                                     );
-                                    const isMet = matchedRubric ? matchedRubric.met : false;
+
+                                    // 하위 호환성 확보: status 또는 boolean 타입의 met 모두 안전하게 파싱
+                                    let status: 'met' | 'partially_met' | 'unmet' = 'unmet';
+                                    if (matchedRubric) {
+                                        if ('status' in matchedRubric) {
+                                            status = (matchedRubric as any).status;
+                                        } else if ('met' in matchedRubric) {
+                                            status = (matchedRubric as any).met ? 'met' : 'unmet';
+                                        }
+                                    }
+
                                     const awarded = matchedRubric ? matchedRubric.awardedScore : 0;
+
+                                    // 3단계 기호 및 디자인 속성 분기
+                                    let indicatorChar = '✖';
+                                    let indicatorColor = '#cbd5e1';
+                                    let bgValColor = '#f8fafc';
+
+                                    if (status === 'met') {
+                                        indicatorChar = '●';
+                                        indicatorColor = '#16a34a';
+                                        bgValColor = '#f0fdf4';
+                                    } else if (status === 'partially_met') {
+                                        indicatorChar = '▲';
+                                        indicatorColor = '#d97706';
+                                        bgValColor = '#fffbeb';
+                                    }
 
                                     return (
                                         <div key={rubric.id} style={{
@@ -305,15 +330,17 @@ export default async function ProblemResultPage({ params }: PageProps) {
                                             padding: '12px 15px',
                                             border: '1px solid #f1f5f9',
                                             borderRadius: '6px',
-                                            backgroundColor: isMet ? '#f0fdf4' : '#fff'
+                                            backgroundColor: bgValColor
                                         }}>
                                             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                                                 <span style={{
-                                                    color: isMet ? '#16a34a' : '#cbd5e1',
+                                                    color: indicatorColor,
                                                     fontWeight: 'bold',
-                                                    fontSize: '1.1rem'
+                                                    fontSize: '1.1rem',
+                                                    width: '20px',
+                                                    textAlign: 'center'
                                                 }}>
-                                                    {isMet ? '✔' : '✖'}
+                                                    {indicatorChar}
                                                 </span>
                                                 <div>
                                                     <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#1e293b' }}>

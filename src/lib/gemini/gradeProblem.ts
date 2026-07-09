@@ -43,7 +43,8 @@ ${answer?.answerText || '(답안 미작성)'}
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
 5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
-6. 모든 응답은 한국어로 작성하세요.`
+6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
+7. 모든 응답은 한국어로 작성하세요.`
 
     const userPrompt = `
 ## 문제 정보
@@ -87,9 +88,9 @@ ${subquestionPrompts.join('\n---\n')}
                                             criterionName: { type: Type.STRING, description: '루브릭 기준명' },
                                             awardedScore: { type: Type.NUMBER, description: '획득 점수' },
                                             maxScore: { type: Type.NUMBER, description: '배점' },
-                                            met: { type: Type.BOOLEAN, description: '기준 충족 여부' },
+                                            status: { type: Type.STRING, description: '기준 충족 여부 (met: 완벽 충족, partially_met: 부분 충족, unmet: 미충족)' },
                                         },
-                                        required: ['criterionName', 'awardedScore', 'maxScore', 'met'],
+                                        required: ['criterionName', 'awardedScore', 'maxScore', 'status'],
                                     },
                                 },
                             },
