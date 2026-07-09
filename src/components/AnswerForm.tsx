@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { ProblemWithDetails } from '@/types/db'
 import type { GradeResponse } from '@/types/grading'
 import GradingResult from './GradingResult'
@@ -10,6 +11,7 @@ interface AnswerFormProps {
 }
 
 export default function AnswerForm({ problem }: AnswerFormProps) {
+    const router = useRouter()
     const [answers, setAnswers] = useState<Record<number, string>>({})
     const [loading, setLoading] = useState(false)
     const [result, setResult] = useState<GradeResponse | null>(null)
@@ -61,8 +63,13 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
                 throw new Error(data.error || '채점 요청에 실패했습니다.')
             }
 
-            const data: GradeResponse = await response.json()
-            setResult(data)
+            const data = await response.json()
+            if (data.attemptId) {
+                // 성공 시 채점결과 전용 상세 페이지로 넘어갑니다.
+                router.push(`/problems/result/${data.attemptId}`)
+            } else {
+                throw new Error('채점 요청은 완료되었으나, 결과 ID를 받지 못했습니다.')
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.')
         } finally {

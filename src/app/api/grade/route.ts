@@ -120,16 +120,28 @@ export async function POST(request: Request) {
         )
 
         // 8. 채점 성공 시 로그 기록
-        const { error: logError } = await adminSupabase
+        const { data: attemptData, error: logError } = await adminSupabase
             .from('cta_grading_attempt')
-            .insert({ user_id: user.id })
+            .insert({
+                user_id: user.id,
+                problem_id: problemId,
+                answers_json: answers,
+                result_json: result
+            })
+            .select('id')
+            .single()
 
         if (logError) {
             console.error('채점 로그 기록 실패:', logError)
         }
 
+        const attemptId = attemptData?.id || null
+
         // 9. 결과 반환
-        return NextResponse.json(result)
+        return NextResponse.json({
+            attemptId,
+            ...result
+        })
     } catch (error) {
         console.error('채점 API 오류:', error)
         return NextResponse.json(
