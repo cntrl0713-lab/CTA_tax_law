@@ -42,7 +42,7 @@ ${answer?.answerText || '(답안 미작성)'}
 2. 각 루브릭 기준별로 배점 내에서 점수를 부여하세요.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
-5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 200자 이내로 작성하세요.
+5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
 6. 모든 응답은 한국어로 작성하세요.`
 
     const userPrompt = `
@@ -96,7 +96,7 @@ ${subquestionPrompts.join('\n---\n')}
                             required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
                         },
                     },
-                    overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 200자 이내)' },
+                    overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 80자 이내로 간결히 요약)' },
                 },
                 required: ['totalScore', 'subquestions', 'overallComment'],
             },
