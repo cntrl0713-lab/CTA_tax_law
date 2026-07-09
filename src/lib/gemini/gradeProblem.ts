@@ -16,15 +16,15 @@ export async function gradeProblem(
         const answer = answers.find((a) => a.subquestionNumber === sq.number)
         const rubrics = sq.subquestion_rubrics
             .sort((a, b) => a.display_order - b.display_order)
-            .map(
-                (r) =>
-                    `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${r.description_display ? `\n    설명: ${r.description_display}` : ''}${r.keywords_json ? `\n    키워드: ${JSON.stringify(r.keywords_json)}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
-            )
+            .map((r) => {
+                const desc = r.description_compact || r.description_display
+                return `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${desc ? `\n    설명: ${desc}` : ''}${r.keywords_json ? `\n    키워드: ${JSON.stringify(r.keywords_json)}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
+            })
             .join('\n')
 
         return `
 ### 물음 ${sq.number} (배점: ${sq.score}점)
-문제: ${sq.prompt_text_full || sq.prompt_text_compact || '(문제 텍스트 없음)'}
+문제: ${sq.prompt_text_compact || sq.prompt_text_full || '(문제 텍스트 없음)'}
 
 채점 루브릭:
 ${rubrics}
@@ -42,7 +42,7 @@ ${answer?.answerText || '(답안 미작성)'}
 2. 각 루브릭 기준별로 배점 내에서 점수를 부여하세요.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
-5. 피드백은 구체적으로, 어떤 부분이 좋았고 무엇이 부족한지 명시하세요.
+5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 200자 이내로 작성하세요.
 6. 모든 응답은 한국어로 작성하세요.`
 
     const userPrompt = `
@@ -51,17 +51,17 @@ ${answer?.answerText || '(답안 미작성)'}
 총 배점: ${problem.total_score}점
 
 ### 사실관계
-${problem.case_text_full || problem.case_text_compact || '(사실관계 없음)'}
+${problem.case_text_compact || problem.case_text_full || '(사실관계 없음)'}
 
 ### 쟁점
-${problem.issue_text_full || problem.issue_text_compact || '(쟁점 없음)'}
+${problem.issue_text_compact || problem.issue_text_full || '(쟁점 없음)'}
 
 ${subquestionPrompts.join('\n---\n')}
 `
 
     // ── Gemini 호출 (구조화 출력) ──
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash-lite',
         contents: userPrompt,
         config: {
             systemInstruction: systemPrompt,
@@ -78,7 +78,7 @@ ${subquestionPrompts.join('\n---\n')}
                                 number: { type: Type.NUMBER, description: '물음 번호' },
                                 awardedScore: { type: Type.NUMBER, description: '획득 점수' },
                                 maxScore: { type: Type.NUMBER, description: '배점' },
-                                feedback: { type: Type.STRING, description: '물음별 피드백' },
+                                feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
                                 rubricResults: {
                                     type: Type.ARRAY,
                                     items: {
@@ -96,7 +96,7 @@ ${subquestionPrompts.join('\n---\n')}
                             required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
                         },
                     },
-                    overallComment: { type: Type.STRING, description: '전체 총평' },
+                    overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 200자 이내)' },
                 },
                 required: ['totalScore', 'subquestions', 'overallComment'],
             },

@@ -20,14 +20,21 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
     }
 
     const handleSubmit = async () => {
-        // 기본 검증: 모든 소문항에 최소 10자 이상
-        const emptySubquestions = problem.subquestions.filter(
-            (sq) => !answers[sq.number] || answers[sq.number].trim().length < 10
-        )
+        // 기본 검증: 모든 소문항에 최소 30자 이상 & 단순 반복 입력 방지
+        const invalidSubquestions = problem.subquestions.filter((sq) => {
+            const text = answers[sq.number] || ''
+            const trimmed = text.trim()
+            if (trimmed.length < 30) return true
 
-        if (emptySubquestions.length > 0) {
+            // 공백을 제외한 고유 문자 수가 5개 미만인 경우 단순 도배/무의미한 입력으로 간주
+            const cleaned = trimmed.replace(/\s/g, '')
+            const uniqueChars = new Set(cleaned).size
+            return uniqueChars < 5
+        })
+
+        if (invalidSubquestions.length > 0) {
             setError(
-                `물음 ${emptySubquestions.map((sq) => sq.number).join(', ')}번의 답안이 너무 짧습니다. (최소 10자)`
+                `물음 ${invalidSubquestions.map((sq) => sq.number).join(', ')}번의 답안이 너무 짧거나 단순 문자가 반복되었습니다. (최소 30자 이상 작성 및 유의미한 내용 필요)`
             )
             return
         }
