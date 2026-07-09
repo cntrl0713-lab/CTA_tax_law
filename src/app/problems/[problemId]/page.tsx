@@ -14,12 +14,12 @@ export default async function ProblemPage({
 
     // 문제 + 소문항 + 루브릭 전체 조회
     const { data: problem } = await supabase
-        .from('problems')
+        .from('cta_problem')
         .select(`
       *,
-      subquestions (
+      cta_subquestion (
         *,
-        subquestion_rubrics (*)
+        cta_subquestion_rubric (*)
       )
     `)
         .eq('id', Number(problemId))
@@ -32,14 +32,14 @@ export default async function ProblemPage({
     const typedProblem = problem as ProblemWithDetails
 
     // 소문항을 display_order 순으로 정렬
-    typedProblem.subquestions.sort((a, b) => a.display_order - b.display_order)
-    typedProblem.subquestions.forEach((sq) => {
-        sq.subquestion_rubrics.sort((a, b) => a.display_order - b.display_order)
+    typedProblem.cta_subquestion.sort((a, b) => a.display_order - b.display_order)
+    typedProblem.cta_subquestion.forEach((sq) => {
+        sq.cta_subquestion_rubric.sort((a, b) => a.display_order - b.display_order)
     })
 
     // 과목명 조회
     const { data: subject } = await supabase
-        .from('subjects')
+        .from('cta_subject')
         .select('name')
         .eq('id', typedProblem.subject_id)
         .single()
@@ -53,7 +53,7 @@ export default async function ProblemPage({
             <div className="problem-header">
                 <h1>{typedProblem.title}</h1>
                 <div className="meta">
-                    총 배점: {typedProblem.total_score}점 · 물음 {typedProblem.subquestions.length}개
+                    총 배점: {typedProblem.total_score}점 · 물음 {typedProblem.cta_subquestion.length}개
                 </div>
             </div>
 

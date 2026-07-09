@@ -12,7 +12,7 @@ export default async function SubjectPage({
 
     // 과목 정보 조회
     const { data: subject } = await supabase
-        .from('subjects')
+        .from('cta_subject')
         .select('*')
         .eq('id', Number(subjectId))
         .single()
@@ -23,7 +23,7 @@ export default async function SubjectPage({
 
     // 해당 과목의 문제 목록 조회
     const { data: problems } = await supabase
-        .from('problems')
+        .from('cta_problem')
         .select('id, title, total_score, issue_text_compact')
         .eq('subject_id', Number(subjectId))
         .order('id')

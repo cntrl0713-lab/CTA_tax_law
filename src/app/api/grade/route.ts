@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         const utcTodayStart = new Date(kstTodayStart.getTime() - kstOffset)
 
         const { count, error: countError } = await adminSupabase
-            .from('grading_attempts')
+            .from('cta_grading_attempt')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', user.id)
             .gte('created_at', utcTodayStart.toISOString())
@@ -95,12 +95,12 @@ export async function POST(request: Request) {
 
         // 6. Supabase에서 문제/소문항/루브릭 조회 (관리자 클라이언트로 RLS 우회)
         const { data: problem, error: problemError } = await adminSupabase
-            .from('problems')
+            .from('cta_problem')
             .select(`
         *,
-        subquestions (
+        cta_subquestion (
           *,
-          subquestion_rubrics (*)
+          cta_subquestion_rubric (*)
         )
       `)
             .eq('id', problemId)
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
 
         // 8. 채점 성공 시 로그 기록
         const { error: logError } = await adminSupabase
-            .from('grading_attempts')
+            .from('cta_grading_attempt')
             .insert({ user_id: user.id })
 
         if (logError) {

@@ -21,7 +21,7 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
 
     const handleSubmit = async () => {
         // 기본 검증: 모든 소문항에 최소 30자 이상 & 단순 반복 입력 방지
-        const invalidSubquestions = problem.subquestions.filter((sq) => {
+        const invalidSubquestions = problem.cta_subquestion.filter((sq) => {
             const text = answers[sq.number] || ''
             const trimmed = text.trim()
             if (trimmed.length < 30) return true
@@ -49,7 +49,7 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     problemId: problem.id,
-                    answers: problem.subquestions.map((sq) => ({
+                    answers: problem.cta_subquestion.map((sq) => ({
                         subquestionNumber: sq.number,
                         answerText: answers[sq.number] || '',
                     })),
@@ -73,7 +73,7 @@ export default function AnswerForm({ problem }: AnswerFormProps) {
     return (
         <>
             {/* 물음별 답안 입력 */}
-            {problem.subquestions.map((sq) => (
+            {problem.cta_subquestion.map((sq) => (
                 <div key={sq.id} className="subquestion">
                     <div className="subquestion-header">
                         <span className="subquestion-number">물음 {sq.number}</span>

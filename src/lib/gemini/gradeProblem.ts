@@ -12,9 +12,9 @@ export async function gradeProblem(
     answers: SubquestionAnswer[]
 ): Promise<GradeResponse> {
     // ── 프롬프트 구성 ──
-    const subquestionPrompts = problem.subquestions.map((sq) => {
+    const subquestionPrompts = problem.cta_subquestion.map((sq) => {
         const answer = answers.find((a) => a.subquestionNumber === sq.number)
-        const rubrics = sq.subquestion_rubrics
+        const rubrics = sq.cta_subquestion_rubric
             .sort((a, b) => a.display_order - b.display_order)
             .map((r) => {
                 const desc = r.description_compact || r.description_display

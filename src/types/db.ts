@@ -44,8 +44,8 @@ export interface SubquestionRubric {
 
 /** 문제 + 소문항 + 루브릭 전체 조인 */
 export interface ProblemWithDetails extends Problem {
-    subquestions: (Subquestion & {
-        subquestion_rubrics: SubquestionRubric[]
+    cta_subquestion: (Subquestion & {
+        cta_subquestion_rubric: SubquestionRubric[]
     })[]
 }
 

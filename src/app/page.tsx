@@ -7,13 +7,13 @@ export default async function HomePage() {
 
   // 과목 목록 + 문제 수 조회
   const { data: subjects } = await supabase
-    .from('subjects')
+    .from('cta_subject')
     .select('*')
     .order('id')
 
   // 과목별 문제 수 조회
   const { data: allProblems } = await supabase
-    .from('problems')
+    .from('cta_problem')
     .select('subject_id')
 
   const countMap: Record<number, number> = {}
