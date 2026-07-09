@@ -53,3 +53,13 @@ export interface ProblemWithDetails extends Problem {
 export interface SubjectWithCount extends Subject {
     problem_count: number
 }
+
+/** CTA 유저 등급 및 정보 */
+export interface CtaUser {
+    id: string
+    email: string | null
+    tier: 'member' | 'pro' | 'admin'
+    exp: number
+    created_at: string
+    updated_at: string
+}

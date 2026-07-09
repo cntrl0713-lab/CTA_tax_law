@@ -9,12 +9,70 @@ export async function POST(request: Request) {
     try {
         // 1. 인증 확인
         const supabase = await createClient()
-        const { data: claimsData } = await supabase.auth.getClaims()
-        if (!claimsData?.claims) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) {
             return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
         }
 
-        // 2. 요청 파싱 및 검증
+        const adminSupabase = createAdminClient()
+
+        // 2. 등급 파악 (Guest, member, pro, admin)
+        let userTier: 'guest' | 'member' | 'pro' | 'admin' = 'guest'
+        if (user.is_anonymous) {
+            userTier = 'guest'
+        } else {
+            const { data: ctaUser } = await adminSupabase
+                .from('cta_user')
+                .select('tier')
+                .eq('id', user.id)
+                .single()
+            userTier = (ctaUser?.tier as 'member' | 'pro' | 'admin') || 'member'
+        }
+
+        // 3. 오늘 자정(KST 기준) 이후 채점 횟수 집계
+        const now = new Date()
+        const kstOffset = 9 * 60 * 60 * 1000 // 9시간
+        const kstNow = new Date(now.getTime() + kstOffset)
+        const kstTodayStart = new Date(
+            Date.UTC(
+                kstNow.getUTCFullYear(),
+                kstNow.getUTCMonth(),
+                kstNow.getUTCDate(),
+                0, 0, 0, 0
+            )
+        )
+        const utcTodayStart = new Date(kstTodayStart.getTime() - kstOffset)
+
+        const { count, error: countError } = await adminSupabase
+            .from('grading_attempts')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .gte('created_at', utcTodayStart.toISOString())
+
+        if (countError) {
+            console.error('채점 횟수 확인 실패:', countError)
+            return NextResponse.json(
+                { error: '채점 횟수를 조회하는 데 실패했습니다.' },
+                { status: 500 }
+            )
+        }
+
+        const attemptsCount = count || 0
+
+        // 4. 등급별 채점 제한 검사
+        if (userTier === 'guest' && attemptsCount >= 1) {
+            return NextResponse.json(
+                { error: '비회원은 하루에 한 번만 채점이 가능합니다.' },
+                { status: 403 }
+            )
+        } else if (userTier === 'member' && attemptsCount >= 3) {
+            return NextResponse.json(
+                { error: '무료회원은 하루에 세 번만 채점이 가능합니다.' },
+                { status: 403 }
+            )
+        }
+
+        // 5. 요청 파싱 및 검증
         const body: GradeRequest = await request.json()
         const { problemId, answers } = body
 
@@ -35,8 +93,7 @@ export async function POST(request: Request) {
             }
         }
 
-        // 3. Supabase에서 문제/소문항/루브릭 조회 (관리자 클라이언트로 RLS 우회)
-        const adminSupabase = createAdminClient()
+        // 6. Supabase에서 문제/소문항/루브릭 조회 (관리자 클라이언트로 RLS 우회)
         const { data: problem, error: problemError } = await adminSupabase
             .from('problems')
             .select(`
@@ -56,13 +113,22 @@ export async function POST(request: Request) {
             )
         }
 
-        // 4. Gemini 채점 호출
+        // 7. Gemini 채점 호출
         const result = await gradeProblem(
             problem as ProblemWithDetails,
             answers
         )
 
-        // 5. 결과 반환 (DB 저장 없음 — MVP)
+        // 8. 채점 성공 시 로그 기록
+        const { error: logError } = await adminSupabase
+            .from('grading_attempts')
+            .insert({ user_id: user.id })
+
+        if (logError) {
+            console.error('채점 로그 기록 실패:', logError)
+        }
+
+        // 9. 결과 반환
         return NextResponse.json(result)
     } catch (error) {
         console.error('채점 API 오류:', error)
