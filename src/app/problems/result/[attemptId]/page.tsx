@@ -15,7 +15,7 @@ export default async function ProblemResultPage({ params }: PageProps) {
     const { data: attempt, error: attemptError } = await supabase
         .from('cta_grading_attempt')
         .select('*')
-        .eq('id', Number(attemptId))
+        .eq('id', attemptId)
         .single()
 
     if (attemptError || !attempt) {
