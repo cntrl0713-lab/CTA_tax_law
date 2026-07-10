@@ -88,8 +88,17 @@ function normalizeScoresAgainstRubrics(
                 )
             }
             const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
-            // unmet은 정의상 0점(시스템 프롬프트 규칙 6), 나머지는 [0, maxScore]로 클램프
-            const awardedScore = rr.status === 'unmet' ? 0 : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
+            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 6: "완전히 충족했으면 met").
+            // partially_met만 [0, maxScore]로 클램프. (실측: 결론을 근거보다 먼저 서술하는 두괄식
+            // 답안에서, 근거 인용은 정답과 정확히 일치하는데도 status=met이면서 부분 점수만 주는
+            // 사례를 확인 — 서술 순서라는 무관한 요인으로 점수만 깎이고 라벨은 정직하게 유지된 것.
+            // status가 요건 충족 여부의 최종 판단이므로 라벨을 신뢰하고 점수를 맞춘다.)
+            const awardedScore =
+                rr.status === 'unmet'
+                    ? 0
+                    : rr.status === 'met'
+                      ? maxScore
+                      : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
             // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
             const status = awardedScore === 0 ? 'unmet' : rr.status

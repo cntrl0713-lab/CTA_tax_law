@@ -1,24 +1,38 @@
 /**
- * 채점 로직 검증 스크립트 — 문제 1(재산가치 증가이익의 증여) / 문제 51(세무조사권 남용)
+ * 채점 로직 검증 스크립트 — 문제 1(재산가치 증가이익의 증여) / 문제 51(세무조사권 남용) / 문제 9(면세전용과 공통매입세액 재계산)
  *
  * 검증 항목:
  *   (1) 충실한 답안이 높은 점수를 받는지 (strong)
  *   (2) 불완전한 답안이 관대하게 채점되지 않는지 (incomplete)
- *   (3) 절반만 맞는 답안이 대략 절반 점수를 받는지 — 문제 1 전용 (half)
- *   (4) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
- *   (5) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
- *   (6) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
+ *   (3) 절반만 맞는 답안이 대략 절반 점수를 받는지 (half)
+ *   (4) 논리·내용은 완전하지만 표현이 완곡/모호한 답안이 정확한 키워드가 없다는 이유만으로
+ *       부당하게 0점 처리되지 않는지 (ambiguous)
+ *   (5) 논리적으로 틀렸지만 자신감 있는 어조로 일반 원칙을 내세우는 답안이 그럴듯한 말투에
+ *       속아 관대하게 채점되지 않는지 (overgeneralized)
+ *   (6) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
+ *   (7) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
+ *   (8) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
  *       (유령 근거/점수 부풀림 탐지 — gradeProblem.ts 내부 함수를 재사용하지 않고 독립 재구현)
  *
  * 허위 누락 탐지는 특정 단어 하드코딩이 아니라, 피드백의 "'X' 누락/언급 없음" 패턴에서
  * X를 추출해 해당 물음 답안에 X가 실제로 존재하는지 정규화 후 대조하는 일반 로직을 사용.
  *
  * 실행 (CTA_tax_law 디렉터리, GEMINI_API_KEY는 .env.local):
- *   npx -y tsx --env-file=.env.local scripts/verify-grading.ts               # 문제1 충실한 답안 (기본)
- *   npx -y tsx --env-file=.env.local scripts/verify-grading.ts --incomplete   # 문제1 관대화 방지 확인
- *   npx -y tsx --env-file=.env.local scripts/verify-grading.ts --half         # 문제1 절반 답안 비례성 확인
- *   npx -y tsx --env-file=.env.local scripts/verify-grading.ts --problem51    # 문제51 회귀 확인 (강한 답안)
- *   npx -y tsx --env-file=.env.local scripts/verify-grading.ts --problem51 --incomplete # 문제51 관대화 방지
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts               # 문제1 충실한 답안 (기본)
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --incomplete   # 문제1 관대화 방지 확인
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --half         # 문제1 절반 답안 비례성 확인
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51    # 문제51 회귀 확인 (강한 답안)
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --incomplete # 문제51 관대화 방지
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --half       # 문제51 절반 답안 비례성 확인
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9              # 문제9 강한 답안 (부가가치세법, 신규)
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --incomplete
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --half
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --ambiguous            # 문제1 애매한 표현 답안
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --ambiguous
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --ambiguous
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --overgeneralized      # 문제1 일반화된 오답
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --overgeneralized
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --overgeneralized
  */
 import { gradeProblem } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
@@ -232,6 +246,19 @@ const INCOMPLETE_ANSWERS: Record<number, string> = {
     3: '토지와 주식은 별개의 재산이므로 甲의 주장처럼 간접적 이익에는 과세할 수 없다고 본다.',
 }
 
+// ── 일반화된 오답: INCOMPLETE와 달리 막연하거나 자신 없는 게 아니라, 그럴듯하고 자신감 있는
+//    어조로 일반 원칙을 내세우되 정작 이 사안에 적용되는 구체적 요건·예외를 무시하거나
+//    거꾸로 뒤집어서 결론 자체가 틀린 답안 — 채점 모델이 권위 있어 보이는 말투나 법률 용어
+//    사용에 속아 관대하게 점수를 주지는 않는지 확인 ──
+const OVERGENERALIZED_ANSWERS: Record<number, string> = {
+    1:
+        '이 제도는 부모 세대의 부가 자녀 세대로 몰래 넘어가는 것을 막기 위한 것이므로, 특수관계인의 도움을 받아 재산을 취득한 사람은 그 재산의 가치가 조금이라도 올랐다면 예외 없이 그 상승분 전부에 증여세를 내야 한다고 본다. 법이 정한 기간이나 금액 기준은 과세관청의 실무 편의를 위한 것일 뿐, 실질적으로 이익을 얻었다면 그러한 기준에 미달하더라도 과세 대상이 된다고 보아야 한다.',
+    2:
+        '공장을 새로 짓고 가동하는 것은 회사의 사업 규모를 확장하여 기업가치를 높이는 행위이므로, 그 자체로 이 제도가 예정한 재산가치 증가사업에 해당한다고 봐야 한다. 대법원도 조세회피를 막기 위해 기업가치를 높이는 사업활동 전반을 폭넓게 개발사업의 시행으로 인정해 온 것으로 이해되므로, 이 사건 처분은 적법하다.',
+    3:
+        '세금은 원칙적으로 납세자가 실제로 취득한 재산 그 자체를 기준으로 매겨야 하고, 취득한 적 없는 다른 재산의 가치 변동에 편승하여 과세하는 것은 조세법률주의에 반한다. 따라서 甲이 취득한 것은 주식일 뿐 토지가 아니므로, 토지 개발로 생긴 간접적 이익에는 과세할 수 없다는 甲의 주장이 타당하다.',
+}
+
 // ── 절반 답안: 물음마다 일부 루브릭만 충족하는 내용을 쓰고 나머지는 완전히 생략
 //    (루브릭 유형을 요건나열형/결론형/법리형으로 다양화해 편향 없이 검증)
 const HALF_ANSWERS: Record<number, string> = {
@@ -264,6 +291,24 @@ const HALF_COVERAGE: Record<number, { covered: string[]; omitted: string[] }> = 
     },
 }
 // 절반 답안 기대 총점: 6(=3+3) + 2 + 4 = 12 / 25 (48%)
+
+// ── 애매한 표현 답안: STRONG_ANSWERS와 논리·내용은 완전히 동일하지만, 루브릭의 정확한 용어를
+//    그대로 쓰지 않고 에둘러·구어체로 풀어 쓰고 결론도 단정 대신 완곡하게 표현함
+//    ("~이다"가 아니라 "~라고 봐야 할 것이다" 류) — 표현이 애매해도 논리가 맞으면 정당하게
+//    인정되는지, 정확한 키워드가 없다고 부당하게 unmet 처리하지는 않는지 확인 ──
+const AMBIGUOUS_ANSWERS: Record<number, string> = {
+    1:
+        '이런 유형의 과세가 인정되려면 몇 가지 조건이 함께 갖춰져야 한다고 본다. 먼저, 이익을 얻은 사람이 스스로의 능력만으로는 그런 재산을 마련하기 어려운 처지에 있으면서도, 가까운 사람으로부터 재산을 그냥 받거나, 아직 알려지지 않은 회사 내부 사정을 미리 전해 듣고 그와 관련된 재산을 값을 치르고 사들이거나, 가까운 사람에게서 빌리거나 그 사람 재산을 담보로 빌린 돈으로 재산을 사들이는 식으로 그 재산을 손에 넣었어야 한다. ' +
+        '다음으로, 그 재산을 손에 넣은 지 다섯 해가 넘지 않은 시점에 애초부터 어느 정도 짐작되던 가치 상승 계기—땅에서 새로운 사업이 벌어지거나 용도가 바뀌는 것, 또는 비상장 주식이 특정 장외 거래 시장에 이름을 올리는 것과 같은—가 실제로 일어나야 한다. ' +
+        '마지막으로, 그로 인해 생긴 이득의 크기가 사소한 수준에 그치지 않아야 하는데, 구체적으로는 재산가치상승금액이 3억 원을 넘거나 애초 취득에 들인 돈과 통상적인 상승분 등을 합친 값의 30퍼센트를 넘는 경우라야 한다.',
+    2:
+        '이 부분에 대해서는 과세관청의 판단을 그대로 받아들이기는 어렵다고 본다. 법원이 이제껏 보여온 태도를 보면, 어떤 사업이 이 제도가 말하는 개발 관련 사유에 해당한다고 하려면 단순히 땅을 쓰는 정도를 넘어, 해당 구역을 개발 대상으로 지정·고시하는 절차가 딸린 채로 그 땅 자체의 가치를 끌어올리는 작업이어야 한다는 쪽으로 상당히 좁게 보는 편이다. ' +
+        '그런데 이 사안은 원래 있던 부지 위에 공장을 다 짓고 물건을 만들기 시작했다는 것뿐이지, 땅을 개발한다는 절차가 함께 있었던 것은 아니어서, 법이 염두에 둔 그런 사유에 해당한다고 보기는 힘들어 보인다. 그렇다면 이를 그런 사유로 보아 세금을 매긴 처분에는 문제가 있다고 봐야 할 것이다.',
+    3:
+        '甲의 이야기처럼 사이에 낀 이익이라 해서 세금을 매길 수 없다고 보기는 어렵다고 생각한다. 이런 제도를 둔 취지가 애초에 세금을 피해가려는 시도를 막으려는 데 있다는 점을 생각하면, 가치가 오른 물건(땅)과 그 사람이 실제로 손에 쥔 것(주식)이 꼭 같은 물건이어야만 하는 것은 아니라고 본다. ' +
+        '회사가 가진 자산의 가치가 어떤 사업으로 인해 올라가고, 그 여파로 그 회사 지분을 쥐고 있던 사람도 지분 가치가 오르는 이득을 보게 되었는데, 이 둘 사이에 그럴 만한 뚜렷한 흐름—즉 하나가 다른 하나를 낳았다고 볼 만한 사정—이 있다면, 지분을 쥔 사람이 그렇게 간접적으로 얻은 이득도 세금을 매길 수 있는 범위 안에 들어온다고 봐야 한다. ' +
+        '이 사안을 보면, 회사가 갖고 있던 땅이 새 도시를 만드는 구역으로 지정되어 개발이 진행되면서 그 회사 자체의 가치가 올라갔고, 그 때문에 甲이 쥐고 있던 지분의 가치도 크게 뛰었으니, 둘 사이의 흐름이 꽤 뚜렷하게 이어진다고 볼 수 있다. 그러니 물건이 서로 다르다는 형식적인 사정만 가지고 세금을 매길 수 없다고 하는 甲의 말은 받아들이기 어렵다.',
+}
 
 // ── 문제 51 데이터: cta_uploader/add_problem_51.py의 실제 업로드 값과 동일 ──
 const problem51: ProblemWithDetails = {
@@ -430,6 +475,271 @@ const INCOMPLETE_ANSWERS_51: Record<number, string> = {
     3: '乙은 참고인 자격으로 조사를 받은 것이므로 별도의 세무조사라고 보기 어렵다. 다만 과세관청이 사전통지를 하지 않은 점은 다소 아쉬운 부분이다.',
 }
 
+// ── 일반화된 오답: 자신감 있는 어조로 일반 원칙을 내세우되 구체적 요건·예외를 무시하거나
+//    뒤집어서 결론이 틀린 답안
+const OVERGENERALIZED_ANSWERS_51: Record<number, string> = {
+    1:
+        '과세관청은 국가의 과세권을 실현하는 기관으로서 납세자의 신고 성실성 여부를 폭넓은 재량으로 판단할 수 있고, 세원 관리 차원에서 의심스러운 정황이 있으면 언제든 조사에 착수할 수 있다고 본다. 신용카드 지출이 신고 소득에 비해 과다하다는 것도 충분히 합리적인 의심 사유가 되므로, 이 사건 수시조사는 적법하다.',
+    2:
+        '한 번 종결된 세무조사는 납세자의 법적 안정성을 위해 예외 없이 재조사가 금지되어야 한다는 것이 조세법의 대원칙이다. 따라서 이 사건처럼 이미 무혐의로 종결된 조사를 그 사유를 불문하고 다시 여는 것은 위법하므로, 甲의 주장이 타당하고 재조사는 위법하다.',
+    3:
+        '세무조사는 조사대상자 본인에 대해서만 진행되는 것이 원칙이므로, 乙처럼 참고인 자격으로 출석한 거래상대방에 대해서는 아무리 강도 높게 캐묻더라도 이는 어디까지나 참고인 조사의 범위에 속할 뿐 별도의 세무조사가 될 수 없다고 본다. 따라서 사전통지나 과세예고통지 없이 이루어진 이 사건 처분은 적법하다.',
+}
+
+// ── 절반 답안: 물음마다 한 루브릭만 충족하는 내용을 쓰고 나머지는 완전히 생략
+//    (문제 1과 달리 물음당 루브릭이 2개뿐이므로, "앞쪽"/"뒤쪽" 커버 위치를 번갈아 검증)
+const HALF_ANSWERS_51: Record<number, string> = {
+    // 물음 1(7점): "성실성 추정 배제 사유"(열거, 4점)만 서술, "수시 세무조사의 적법성"(결론, 3점)은 미언급
+    1: '성실성 추정 배제 사유로는 납세협력의무 이행 누락, 무자료·위장·가공거래 혐의, 구체적인 탈세제보, 신고내용에 탈루나 오류를 인정할 만한 명백한 자료가 있는 경우 등이 있다.',
+    // 물음 2(8점): "재조사의 적법성"(결론·포섭, 4점)만 서술, "명백한 자료의 의미"(정의, 4점)는 미언급
+    2: '이 사건 엑셀 파일은 검찰의 압수수색이라는 별도 절차를 통해 비로소 확보된 자료이고 구체적인 자금흐름이 상세히 기록되어 있으므로, 甲의 주장은 타당하지 않고 재조사는 적법하다.',
+    // 물음 3(8점): "별도 세무조사 판단 기준"(법리, 4점)만 서술, "처분의 적법성"(결론, 4점)은 미언급
+    3: '대법원은 거래상대방에 대한 질문조사 과정에서 과세요건 사실에 대한 진술을 강요하여 영업의 자유나 사생활의 자유가 침해될 염려가 있는 경우에는 단순한 참고인 조사를 넘어 거래상대방에 대한 별도의 세무조사에 해당한다고 본다.',
+}
+
+// 절반 답안에서 물음별로 "채운" 루브릭과 "비운" 루브릭
+const HALF_COVERAGE_51: Record<number, { covered: string[]; omitted: string[] }> = {
+    1: {
+        covered: ['성실성 추정 배제 사유'],
+        omitted: ['수시 세무조사의 적법성'],
+    },
+    2: {
+        covered: ['재조사의 적법성'],
+        omitted: ['명백한 자료의 의미'],
+    },
+    3: {
+        covered: ['별도 세무조사 판단 기준'],
+        omitted: ['처분의 적법성'],
+    },
+}
+// 절반 답안 기대 총점: 4 + 4 + 4 = 12 / 23 (약 52%)
+
+// ── 애매한 표현 답안: STRONG_ANSWERS_51과 논리·내용은 동일하지만 완곡하게 풀어 씀
+const AMBIGUOUS_ANSWERS_51: Record<number, string> = {
+    1:
+        '성실하게 신고했다고 보는 전제를 깨고 조사에 들어갈 수 있는 경우로는, 세금 관련해서 마땅히 지켜야 할 의무를 안 지킨 정황이 있다거나, 거래 자체가 실제와 다르게—증빙 없이 이뤄졌거나 거짓으로 꾸며졌거나 하는 식으로—이루어졌다는 낌새가 있다거나, 누군가 구체적으로 탈세를 신고해온 경우, 혹은 신고한 내용에 뭔가 빠뜨리거나 잘못된 부분이 있다는 게 뚜렷이 드러나는 자료가 있는 경우 등을 들 수 있다. ' +
+        '그런데 이 사안에서는 그저 카드 쓴 돈이 신고한 소득에 비해 많아 보인다는 정도의 막연한 느낌만으로 조사가 시작되었을 뿐, 앞서 말한 어느 경우에도 뚜렷이 들어맞지 않는다. 그렇다면 별다른 근거 자료 없이 그런 느낌만으로 조사에 나선 것은 조사 권한을 과하게 쓴 것이어서 문제가 있다고 본다.',
+    2:
+        "같은 시기를 다시 들여다볼 수 있게 해주는 '뚜렷한 자료'라는 게 뭘 말하는지는, 세금을 축내려 한 사정이 있다는 게 그럴듯하고 믿을 만한 근거로 어느 정도 이상 드러나야 하고, 예전 조사 때 이미 봤던 것과 겹치지 않는 새로 나온 것이어야 한다는 뜻으로 이해된다. " +
+        "이 사건의 엑셀 자료는 검찰이 별도로 진행한 압수수색을 통해서야 비로소 세상에 나온 것이고, 돈이 오간 내역이 구체적으로 다 적혀 있어 그럴듯하고 믿을 만하다고 볼 수 있으니, 앞서 말한 '뚜렷한 자료'에 들어맞는다고 본다. 그러니 甲의 주장은 받아들이기 어렵고, 다시 들여다본 것 자체는 문제없다고 본다.",
+    3:
+        '거래하던 상대방을 상대로 이것저것 캐묻는 과정에서, 세금이 매겨지는 근거가 되는 사실 자체를 사실상 털어놓게 만들어서 그 사람이 장사하거나 사생활을 지킬 자유가 흔들릴 수 있는 지경까지 가면, 단순히 옆에서 이야기를 들어보는 수준을 넘어 그 사람 본인에 대한 별개의 조사나 마찬가지라고 보는 게 법원 입장인 것 같다. ' +
+        '이 사건에서 乙을 상대로 한 조사는 사실상 그런 별개의 조사에 해당하는데도, 미리 알리는 절차나 과세 예정 사실을 미리 알려주는 절차를 거치지 않았으니, 乙에게 매겨진 종합소득세 처분은 절차상 문제가 있다고 본다.',
+}
+
+// ── 문제 9 데이터: cta_uploader/data/problem_9.json + upload_cta.py 변환 로직과 동일
+//    (id 체계: subquestion.id = {problem_id}{number}, rubric.id = {subquestion_id}{rubric_index};
+//     case_text_full/compact는 원본 배열을 " "로 join한 값이 실제 DB 저장값) ──
+const problem9: ProblemWithDetails = {
+    id: 9,
+    subject_id: 5,
+    title: '면세전용과 공통매입세액 재계산',
+    total_score: 20,
+    case_text_full:
+        '[상황 1] 과세사업과 면세사업을 겸영하는 내국법인 甲은 과세사업에만 사용할 목적으로 화물트럭(감가상각자산)을 구입하면서 관련 매입세액을 전액 공제받았다. 그러나 이후 사업 구조를 개편하면서 해당 화물트럭을 과세사업에 더 이상 사용하지 않고 면세사업을 위해서만 전적으로 사용하기 시작하였다. 甲은 해당 트럭을 타인에게 매각한 것이 아니므로 부가가치세 신고 시 별도의 과세표준을 인식하지 않았다. ' +
+        '[상황 2] 甲법인은 과세사업과 면세사업에 공통으로 사용하기 위해 기계장치(감가상각자산)를 구입하였다. 甲은 구입일이 속하는 과세기간의 총공급가액에 대한 면세공급가액 비율에 따라 공통매입세액을 안분하여 일부 매입세액을 공제받았다. 이후 다음 과세기간에 甲법인의 과세 및 면세 공급가액 비율에 변동이 발생하였다.',
+    case_text_compact:
+        '甲은 과세사업용으로 구입한 화물트럭을 이후 면세사업 전용으로 사용하였다. 또 과세·면세 겸용 기계장치를 취득해 공통매입세액을 안분공제한 뒤 다음 과세기간에 공급가액 비율이 변동되었다.',
+    issue_text_full:
+        "[상황 1] 과세관청은 甲이 화물트럭을 면세사업에 전적으로 사용한 행위를 재화의 공급으로 보아, 부가가치세 과세표준을 산정하여 부가가치세를 증액 경정·고지하였다.\n[상황 2] 면세비율 변동에 따른 공통매입세액 재계산 요건 및 적용 배제 사유가 쟁점이다.",
+    issue_text_compact:
+        '화물트럭의 면세전용을 재화의 공급으로 볼 수 있는지와, 공통매입세액 재계산의 요건·배제사유가 쟁점이다.',
+    created_at: null,
+    cta_subquestion: [
+        {
+            id: 91,
+            problem_id: 9,
+            number: 1,
+            score: 8,
+            display_order: 1,
+            prompt_text_full:
+                "[상황 1]에서 과세관청이 해당 행위를 '재화의 공급(면세전용)'으로 보아 과세하는 제도의 취지 2가지를 쓰고, 해당 화물트럭(감가상각자산)의 부가가치세 공급가액(과세표준)을 산정하는 구체적인 기준(방법)을 서술하시오.",
+            prompt_text_compact: '면세전용의 취지 2가지와 감가상각자산의 공급가액 산정방법을 서술하시오.',
+            cta_subquestion_rubric: [
+                {
+                    id: 911,
+                    subquestion_id: 91,
+                    criterion_name: '과세 취지 1',
+                    max_score: 2,
+                    required: true,
+                    display_order: 1,
+                    description_display:
+                        '매입세액을 공제받은 후 면세사업에 전용하는 경우, 처음부터 면세사업용으로 구입하여 매입세액을 공제받지 못한 사업자와의 과세형평을 유지하기 위함이다.',
+                    description_compact: '매입세액 공제자와 비공제자의 과세형평 유지',
+                    keywords_json: kw(['과세형평', '매입세액 공제', '면세전용']),
+                    example_answer_text:
+                        '면세전용 과세는 매입세액을 공제받은 자와 처음부터 면세사업용으로 사들여 공제받지 못한 자 사이의 과세형평을 유지하기 위한 것이다.',
+                },
+                {
+                    id: 912,
+                    subquestion_id: 91,
+                    criterion_name: '과세 취지 2',
+                    max_score: 2,
+                    required: true,
+                    display_order: 2,
+                    description_display: '부가가치세 부담이 없는 소비를 방지하기 위함이다.',
+                    description_compact: '부가가치세 부담 없는 소비 방지',
+                    keywords_json: kw(['부가가치세 부담', '소비 방지', '면세전용']),
+                    example_answer_text: '면세전용은 부가가치세 부담이 없는 소비를 방지하기 위한 제도이다.',
+                },
+                {
+                    id: 913,
+                    subquestion_id: 91,
+                    criterion_name: '공급가액 산정방법',
+                    max_score: 4,
+                    required: true,
+                    display_order: 3,
+                    description_display:
+                        '화물트럭과 같은 감가상각자산의 면세전용 시, 당초의 취득가액을 기준으로 경과된 과세기간의 수에 따른 체감률(상각률)을 반영하여 산출한 간주공급가액을 과세표준으로 한다.',
+                    description_compact: '취득가액에 경과기간별 체감률을 적용한 간주공급가액을 과세표준으로 함',
+                    keywords_json: kw(['감가상각자산', '취득가액', '체감률', '간주공급가액']),
+                    example_answer_text:
+                        '화물트럭의 과세표준은 당초 취득가액에 경과 과세기간 수에 따른 체감률을 반영하여 계산한 간주공급가액으로 산정한다.',
+                },
+            ],
+        },
+        {
+            id: 92,
+            problem_id: 9,
+            number: 2,
+            score: 12,
+            display_order: 2,
+            prompt_text_full:
+                "[상황 2]와 관련하여 「부가가치세법」상 공통매입세액의 재계산을 적용하기 위한 구체적 요건 3가지와 재계산 시기를 서술하고, 해당 요건을 충족하더라도 예외적으로 재계산이 배제되는 사유 2가지를 제시하시오.",
+            prompt_text_compact: '공통매입세액 재계산의 요건 3가지, 시기, 배제사유 2가지를 서술하시오.',
+            cta_subquestion_rubric: [
+                {
+                    id: 921,
+                    subquestion_id: 92,
+                    criterion_name: '재계산 요건 1',
+                    max_score: 2,
+                    required: true,
+                    display_order: 1,
+                    description_display: '당초 공통매입세액을 안분계산하여 매입세액을 공제받은 자산일 것.',
+                    description_compact: '당초 공통매입세액을 안분공제한 자산',
+                    keywords_json: kw(['공통매입세액', '안분계산', '매입세액 공제']),
+                    example_answer_text: '당초 공통매입세액을 안분계산하여 공제받은 자산이어야 한다.',
+                },
+                {
+                    id: 922,
+                    subquestion_id: 92,
+                    criterion_name: '재계산 요건 2',
+                    max_score: 2,
+                    required: true,
+                    display_order: 2,
+                    description_display: '해당 자산이 감가상각자산일 것.',
+                    description_compact: '감가상각자산일 것',
+                    keywords_json: kw(['감가상각자산']),
+                    example_answer_text: '재계산 대상은 감가상각자산이어야 한다.',
+                },
+                {
+                    id: 923,
+                    subquestion_id: 92,
+                    criterion_name: '재계산 요건 3',
+                    max_score: 2,
+                    required: true,
+                    display_order: 3,
+                    description_display:
+                        '당초 안분계산 시의 면세비율과 재계산하는 과세기간의 면세비율 차이가 5% 이상 증감할 것.',
+                    description_compact: '면세비율 차이가 5% 이상일 것',
+                    keywords_json: kw(['면세비율', '5% 이상', '증감']),
+                    example_answer_text: '당초 안분계산 시와 재계산 시의 면세비율 차이가 5% 이상이어야 한다.',
+                },
+                {
+                    id: 924,
+                    subquestion_id: 92,
+                    criterion_name: '재계산 시기',
+                    max_score: 2,
+                    required: true,
+                    display_order: 4,
+                    description_display: '재계산은 예정신고 시에는 하지 아니하고, 해당 과세기간의 확정신고 시에만 한다.',
+                    description_compact: '예정신고는 아니고 확정신고 시 재계산',
+                    keywords_json: kw(['예정신고', '확정신고', '재계산 시기']),
+                    example_answer_text: '재계산은 예정신고가 아니라 해당 과세기간의 확정신고 시에만 한다.',
+                },
+                {
+                    id: 925,
+                    subquestion_id: 92,
+                    criterion_name: '배제 사유 1',
+                    max_score: 2,
+                    required: true,
+                    display_order: 5,
+                    description_display: '공통사용 감가상각자산을 타인에게 매각하는 등 재화의 공급에 해당하는 경우.',
+                    description_compact: '타인 매각 등 재화의 공급인 경우 배제',
+                    keywords_json: kw(['타인에게 매각', '재화의 공급', '배제']),
+                    example_answer_text: '공통사용 감가상각자산을 타인에게 매각하여 재화의 공급이 되는 경우에는 재계산이 배제된다.',
+                },
+                {
+                    id: 926,
+                    subquestion_id: 92,
+                    criterion_name: '배제 사유 2',
+                    max_score: 2,
+                    required: true,
+                    display_order: 6,
+                    description_display: '공통사용 감가상각자산이 멸실되거나 폐기된 경우.',
+                    description_compact: '멸실 또는 폐기된 경우 배제',
+                    keywords_json: kw(['멸실', '폐기', '배제']),
+                    example_answer_text: '공통사용 감가상각자산이 멸실되거나 폐기된 경우에도 재계산은 배제된다.',
+                },
+            ],
+        },
+    ],
+}
+
+const STRONG_ANSWERS_9: Record<number, string> = {
+    1:
+        '면세전용 과세는 매입세액을 공제받은 자와 처음부터 면세사업용으로 사들여 공제받지 못한 자 사이의 과세형평을 유지하기 위한 것이며, 부가가치세 부담이 없는 소비를 방지하기 위한 제도이다. ' +
+        '화물트럭과 같은 감가상각자산을 면세전용하는 경우의 과세표준은 당초 취득가액을 기준으로 경과된 과세기간 수에 따른 체감률(상각률)을 반영하여 산출한 간주공급가액으로 한다.',
+    2:
+        '공통매입세액의 재계산이 적용되려면, 당초 공통매입세액을 안분계산하여 매입세액을 공제받은 자산이어야 하고, 해당 자산이 감가상각자산이어야 하며, 당초 안분계산 시의 면세비율과 재계산하는 과세기간의 면세비율 차이가 5% 이상 증감하여야 한다. ' +
+        '재계산은 예정신고 시에는 하지 아니하고 해당 과세기간의 확정신고 시에만 한다. ' +
+        '다만 공통사용 감가상각자산을 타인에게 매각하는 등 재화의 공급에 해당하는 경우나, 그 자산이 멸실되거나 폐기된 경우에는 예외적으로 재계산이 배제된다.',
+}
+
+const INCOMPLETE_ANSWERS_9: Record<number, string> = {
+    1: '면세사업으로 용도를 바꾸면 세금 문제가 생길 수 있어서 과세하는 것 같다.',
+    2: '공통매입세액은 처음에 나눠서 공제받았으면 나중에 비율이 바뀌어도 그대로 두면 된다고 생각한다.',
+}
+
+// ── 일반화된 오답: 자신감 있는 어조로 일반 원칙을 내세우되 구체적 요건·예외(간주공급, 재계산 요건)를
+//    무시하거나 뒤집어서 결론이 틀린 답안
+const OVERGENERALIZED_ANSWERS_9: Record<number, string> = {
+    1:
+        '부가가치세는 실제로 거래상대방에게 재화나 용역이 공급되었을 때에만 과세하는 것이 원칙이다. 면세전용은 사업자가 스스로 결정한 내부적인 자산 운용 변경에 불과할 뿐 외부에 재화를 넘긴 것이 아니므로, 실제 공급이 없는 이상 별도의 과세표준을 인식할 필요가 없다고 본다.',
+    2:
+        '부가가치세는 매 과세기간의 거래를 단위로 정산이 확정되는 세목이므로, 공통매입세액을 한 번 안분하여 공제받았다면 그것으로 법률관계가 확정된다. 이후 자산의 이용 비율이 달라졌다고 해서 이미 지나간 과세기간의 공제액을 다시 계산하는 것은 조세법률주의에 반하므로, 별도의 재계산 절차는 인정되지 않는다고 봐야 한다.',
+}
+
+// ── 절반 답안: 물음 1은 "취지"만(방법 누락), 물음 2는 "요건"만(시기·배제사유 누락)
+const HALF_ANSWERS_9: Record<number, string> = {
+    // 물음 1(8점): "과세 취지 1·2"(4점)만 서술, "공급가액 산정방법"(4점)은 미언급
+    1: '면세전용 과세는 매입세액을 공제받은 자와 처음부터 면세사업용으로 사들여 공제받지 못한 자 사이의 과세형평을 유지하기 위한 것이며, 부가가치세 부담이 없는 소비를 방지하기 위한 제도이다.',
+    // 물음 2(12점): "재계산 요건 1·2·3"(6점)만 서술, "재계산 시기"·"배제 사유 1·2"(6점)는 미언급
+    2: '공통매입세액의 재계산이 적용되려면, 당초 공통매입세액을 안분계산하여 매입세액을 공제받은 자산이어야 하고, 해당 자산이 감가상각자산이어야 하며, 당초 안분계산 시의 면세비율과 재계산하는 과세기간의 면세비율 차이가 5% 이상 증감하여야 한다.',
+}
+
+const HALF_COVERAGE_9: Record<number, { covered: string[]; omitted: string[] }> = {
+    1: {
+        covered: ['과세 취지 1', '과세 취지 2'],
+        omitted: ['공급가액 산정방법'],
+    },
+    2: {
+        covered: ['재계산 요건 1', '재계산 요건 2', '재계산 요건 3'],
+        omitted: ['재계산 시기', '배제 사유 1', '배제 사유 2'],
+    },
+}
+// 절반 답안 기대 총점: 4 + 6 = 10 / 20 (50%)
+
+// ── 애매한 표현 답안: STRONG_ANSWERS_9와 논리·내용은 동일하지만 완곡하게 풀어 씀
+const AMBIGUOUS_ANSWERS_9: Record<number, string> = {
+    1:
+        '애초에 세금을 돌려받은 사람과, 처음부터 세금 안 붙는 용도로 사서 아예 돌려받지 못한 사람 사이에 형평이 안 맞는 문제를 막으려는 취지가 하나 있고, 세금이 안 붙는 소비를 하고도 아무 부담 없이 넘어가는 상황을 막으려는 취지가 또 하나 있다고 본다. ' +
+        '화물트럭처럼 시간이 지나며 가치가 줄어드는 자산을 이렇게 용도를 바꿔 쓰는 경우에는, 원래 살 때 들인 돈을 기준으로 삼되 시간이 흐른 만큼—그동안 지나온 신고 기간 수만큼—가치가 깎인 정도를 반영해서 나온 값을 매출로 보고 세금을 매기는 방식이라고 이해하면 된다.',
+    2:
+        '공통으로 쓰는 자산에 대해 나중에 다시 계산을 해보려면 몇 가지가 갖춰져 있어야 한다고 본다. 우선 애초에 세금을 나눠서 일부만 돌려받은 자산이어야 하고, 시간이 지나며 가치가 줄어드는 성격의 자산이어야 하며, 처음 나눠 계산했을 때의 면세 쪽 비중과 나중에 다시 따져볼 때의 비중 사이에 차이가 다섯 퍼센트 이상 벌어져 있어야 한다. ' +
+        '그리고 이렇게 다시 계산하는 건 중간에 미리 하는 신고 때는 하지 않고, 그 기간이 다 끝난 뒤 최종적으로 정리하는 신고 때 가서야 하게 된다. 다만 그 자산을 이미 남에게 넘겨버렸다든지 하는 식으로 사실상 다른 형태로 처리된 경우이거나, 자산 자체가 없어지거나 버려진 경우에는 이런 재계산을 굳이 하지 않는다고 본다.',
+}
+
 interface ProblemFixture {
     problem: ProblemWithDetails
     label: string
@@ -437,6 +747,8 @@ interface ProblemFixture {
     incompleteAnswers: Record<number, string>
     halfAnswers?: Record<number, string>
     halfCoverage?: Record<number, { covered: string[]; omitted: string[] }>
+    ambiguousAnswers?: Record<number, string>
+    overgeneralizedAnswers?: Record<number, string>
 }
 
 const PROBLEM1_FIXTURE: ProblemFixture = {
@@ -446,6 +758,8 @@ const PROBLEM1_FIXTURE: ProblemFixture = {
     incompleteAnswers: INCOMPLETE_ANSWERS,
     halfAnswers: HALF_ANSWERS,
     halfCoverage: HALF_COVERAGE,
+    ambiguousAnswers: AMBIGUOUS_ANSWERS,
+    overgeneralizedAnswers: OVERGENERALIZED_ANSWERS,
 }
 
 const PROBLEM51_FIXTURE: ProblemFixture = {
@@ -453,9 +767,24 @@ const PROBLEM51_FIXTURE: ProblemFixture = {
     label: '문제 51(세무조사권 남용)',
     strongAnswers: STRONG_ANSWERS_51,
     incompleteAnswers: INCOMPLETE_ANSWERS_51,
+    halfAnswers: HALF_ANSWERS_51,
+    halfCoverage: HALF_COVERAGE_51,
+    ambiguousAnswers: AMBIGUOUS_ANSWERS_51,
+    overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_51,
 }
 
-type Mode = 'strong' | 'incomplete' | 'half'
+const PROBLEM9_FIXTURE: ProblemFixture = {
+    problem: problem9,
+    label: '문제 9(면세전용과 공통매입세액 재계산)',
+    strongAnswers: STRONG_ANSWERS_9,
+    incompleteAnswers: INCOMPLETE_ANSWERS_9,
+    halfAnswers: HALF_ANSWERS_9,
+    halfCoverage: HALF_COVERAGE_9,
+    ambiguousAnswers: AMBIGUOUS_ANSWERS_9,
+    overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_9,
+}
+
+type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized'
 
 function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] {
     const src =
@@ -463,6 +792,10 @@ function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] 
             ? fixture.incompleteAnswers
             : mode === 'half'
             ? fixture.halfAnswers
+            : mode === 'ambiguous'
+            ? fixture.ambiguousAnswers
+            : mode === 'overgeneralized'
+            ? fixture.overgeneralizedAnswers
             : fixture.strongAnswers
     if (!src) {
         throw new Error(`${fixture.label}은(는) --${mode} 모드를 지원하지 않습니다.`)
@@ -493,14 +826,30 @@ function findFalseOmissions(feedback: string, answerText: string): string[] {
 }
 
 async function main() {
-    const fixture = process.argv.includes('--problem51') ? PROBLEM51_FIXTURE : PROBLEM1_FIXTURE
+    const fixture = process.argv.includes('--problem51')
+        ? PROBLEM51_FIXTURE
+        : process.argv.includes('--problem9')
+        ? PROBLEM9_FIXTURE
+        : PROBLEM1_FIXTURE
     const mode: Mode = process.argv.includes('--half')
         ? 'half'
         : process.argv.includes('--incomplete')
         ? 'incomplete'
+        : process.argv.includes('--ambiguous')
+        ? 'ambiguous'
+        : process.argv.includes('--overgeneralized')
+        ? 'overgeneralized'
         : 'strong'
     const modeLabel =
-        mode === 'half' ? '절반 답안(비례성 확인)' : mode === 'incomplete' ? '관대화 방지(불완전 답안)' : '재현(충실한 답안)'
+        mode === 'half'
+            ? '절반 답안(비례성 확인)'
+            : mode === 'incomplete'
+            ? '관대화 방지(불완전 답안)'
+            : mode === 'ambiguous'
+            ? '애매한 표현(논리는 맞지만 완곡한 답안)'
+            : mode === 'overgeneralized'
+            ? '일반화된 오답(논리는 틀렸지만 자신감 있는 답안)'
+            : '재현(충실한 답안)'
     console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
 
     const answers = buildAnswers(fixture, mode)
@@ -600,6 +949,33 @@ async function main() {
         checks.push({
             name: `총점이 만점의 30~65% 범위 (절반 정도) (${result.totalScore}/${result.maxScore})`,
             pass: result.totalScore >= result.maxScore * 0.3 && result.totalScore <= result.maxScore * 0.65,
+        })
+    } else if (mode === 'ambiguous') {
+        // 내용·논리는 STRONG과 완전히 동일하고 표현만 완곡하므로, 정확한 키워드가 없다는
+        // 이유만으로 부당하게 unmet(0점) 처리되는 루브릭이 없어야 하며 총점도 높게 유지되어야 함
+        for (const sq of result.subquestions) {
+            for (const rr of sq.rubricResults) {
+                checks.push({
+                    name: `물음 ${sq.number} "${rr.criterionName}" 완곡한 표현이어도 0점 처리되지 않음 (${rr.awardedScore}/${rr.maxScore})`,
+                    pass: rr.awardedScore > 0,
+                })
+            }
+        }
+        checks.push({
+            name: `애매한 표현 답안 총점이 만점의 60% 이상 (${result.totalScore}/${result.maxScore})`,
+            pass: result.totalScore >= result.maxScore * 0.6,
+        })
+        checks.push({
+            name: '답안에 실존하는 표현을 누락으로 지적한 허위 감점 없음',
+            pass: falseOmissionsAll.length === 0,
+        })
+    } else if (mode === 'overgeneralized') {
+        // 자신감 있는 어조·법률 용어 사용에 속아 결론이 틀린 답안에 관대하게 점수를 주지 않는지 확인.
+        // INCOMPLETE(막연/불확실)보다 더 엄격한 기준(40%)을 쓴다 — 이쪽은 막연한 게 아니라
+        // 명확한 어조로 정반대 결론을 주장하는 답안이므로 더 낮게 나와야 함
+        checks.push({
+            name: `일반화된 오답 총점이 만점의 40% 미만 (${result.totalScore}/${result.maxScore})`,
+            pass: result.totalScore < result.maxScore * 0.4,
         })
     } else {
         checks.push({

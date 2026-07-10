@@ -14,7 +14,7 @@
  *      (오르면 정당한 엄격함, 안 오르면 버그에 가까움)
  *
  * 실행 (CTA_tax_law 디렉터리, GEMINI_API_KEY는 .env.local):
- *   npx -y tsx --env-file=.env.local scripts/investigate-q3-strictness.ts
+ *   npx -y tsx --env-file=.env.local tests/investigate-q3-strictness.ts
  */
 import { gradeProblem } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
