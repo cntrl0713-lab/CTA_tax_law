@@ -44,7 +44,9 @@ ${answer?.answerText || '(답안 미작성)'}
 4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
 5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
 6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
-7. 모든 응답은 한국어로 작성하세요.`
+7. 설명이 부실하거나 핵심 요건(수치, 법적 절차 요건 등) 중 일부가 누락된 경우 절대로 만점(met)을 주지 말고 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오.
+8. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
+9. 모든 응답은 한국어로 작성하세요.`
 
     const userPrompt = `
 ## 문제 정보
@@ -67,6 +69,7 @@ ${subquestionPrompts.join('\n---\n')}
         config: {
             systemInstruction: systemPrompt,
             responseMimeType: 'application/json',
+            temperature: 0.2,
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {

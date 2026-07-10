@@ -85,6 +85,21 @@ export default async function ProblemResultPage({ params }: PageProps) {
 
     return (
         <div className="container" style={{ maxWidth: '900px', margin: '40px auto' }}>
+            <style>{`
+                .rubric-details summary::-webkit-details-marker {
+                    display: none;
+                }
+                .rubric-details summary {
+                    list-style: none;
+                }
+                .rubric-details summary:focus {
+                    outline: none;
+                }
+                .rubric-details[open] {
+                    border-color: #cbd5e1 !important;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+                }
+            `}</style>
             <Link href={`/problems/${typedProblem.id}`} className="back-link">
                 ← 문제풀이로 돌아가기
             </Link>
@@ -262,32 +277,10 @@ export default async function ProblemResultPage({ params }: PageProps) {
                             </div>
                         </div>
 
-                        {/* 모범 답안 */}
-                        <div style={{ marginBottom: '25px' }}>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e3a8a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span>🎯 모범 답안</span>
-                            </div>
-                            <div style={{
-                                border: '1px solid #bfdbfe',
-                                borderRadius: '6px',
-                                padding: '15px',
-                                fontSize: '0.95rem',
-                                color: '#1e3a8a',
-                                backgroundColor: '#eff6ff',
-                                whiteSpace: 'pre-wrap',
-                                minHeight: '60px',
-                                lineHeight: '1.5'
-                            }}>
-                                {sq.cta_subquestion_rubric.find(r => r.example_answer_text)?.example_answer_text ||
-                                    sq.cta_subquestion_rubric[0]?.example_answer_text ||
-                                    '(등록된 모범 답안이 없습니다.)'}
-                            </div>
-                        </div>
-
                         {/* 채점 기준 리스트 */}
                         <div style={{ marginBottom: '20px' }}>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#475569', marginBottom: '10px' }}>
-                                📏 채점 기준 및 획득 여부
+                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#475569', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>📏 채점 기준 및 획득 여부 (클릭 시 상세 기준 확인)</span>
                             </div>
                             <div style={{ display: 'grid', gap: '10px' }}>
                                 {sq.cta_subquestion_rubric.map((rubric) => {
@@ -323,40 +316,97 @@ export default async function ProblemResultPage({ params }: PageProps) {
                                     }
 
                                     return (
-                                        <div key={rubric.id} style={{
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            justifyContent: 'space-between',
-                                            padding: '12px 15px',
+                                        <details key={rubric.id} className="rubric-details" style={{
                                             border: '1px solid #f1f5f9',
                                             borderRadius: '6px',
-                                            backgroundColor: bgValColor
+                                            backgroundColor: bgValColor,
+                                            overflow: 'hidden'
                                         }}>
-                                            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                                                <span style={{
-                                                    color: indicatorColor,
-                                                    fontWeight: 'bold',
-                                                    fontSize: '1.1rem',
-                                                    width: '20px',
-                                                    textAlign: 'center'
-                                                }}>
-                                                    {indicatorChar}
-                                                </span>
-                                                <div>
-                                                    <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#1e293b' }}>
-                                                        {rubric.criterion_name}
-                                                    </div>
-                                                    {(rubric.description_compact || rubric.description_display) && (
-                                                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                                                            {rubric.description_compact || rubric.description_display}
+                                            <summary style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '12px 15px',
+                                                cursor: 'pointer',
+                                                userSelect: 'none'
+                                            }}>
+                                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                                    <span style={{
+                                                        color: indicatorColor,
+                                                        fontWeight: 'bold',
+                                                        fontSize: '1.1rem',
+                                                        width: '20px',
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        {indicatorChar}
+                                                    </span>
+                                                    <div>
+                                                        <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#1e293b' }}>
+                                                            {rubric.criterion_name}
                                                         </div>
-                                                    )}
+                                                        {rubric.description_compact && (
+                                                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                                                                {rubric.description_compact}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', whiteSpace: 'nowrap' }}>
+                                                        {awarded} / {rubric.max_score}점
+                                                    </span>
+                                                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>▼</span>
+                                                </div>
+                                            </summary>
+                                            <div style={{
+                                                padding: '15px',
+                                                borderTop: '1px solid #f1f5f9',
+                                                backgroundColor: '#ffffff',
+                                                fontSize: '0.88rem',
+                                                color: '#334155',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '12px'
+                                            }}>
+                                                {rubric.description_display && (
+                                                    <div>
+                                                        <span style={{ fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>📋 상세 채점 기준</span>
+                                                        <p style={{ margin: 0, color: '#334155', lineHeight: '1.5' }}>{rubric.description_display}</p>
+                                                    </div>
+                                                )}
+                                                {rubric.keywords_json && (
+                                                    <div>
+                                                        <span style={{ fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '4px' }}>🔑 핵심 키워드</span>
+                                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                                            {(() => {
+                                                                try {
+                                                                    const kws = typeof rubric.keywords_json === 'string' ? JSON.parse(rubric.keywords_json) : rubric.keywords_json;
+                                                                    if (Array.isArray(kws)) {
+                                                                        return kws.map((kw, idx) => (
+                                                                            <span key={idx} style={{
+                                                                                backgroundColor: '#f1f5f9',
+                                                                                color: '#475569',
+                                                                                padding: '3px 8px',
+                                                                                borderRadius: '4px',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: '500'
+                                                                            }}>{kw}</span>
+                                                                        ));
+                                                                    }
+                                                                } catch (e) { }
+                                                                return <span style={{ color: '#64748b' }}>{String(rubric.keywords_json)}</span>;
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {rubric.example_answer_text && (
+                                                    <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '12px' }}>
+                                                        <span style={{ fontWeight: 'bold', color: '#1e3a8a', display: 'block', marginBottom: '4px' }}>🎯 핵심 모범답안</span>
+                                                        <p style={{ margin: 0, color: '#1e3a8a', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{rubric.example_answer_text}</p>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', whiteSpace: 'nowrap' }}>
-                                                {awarded} / {rubric.max_score}점
-                                            </div>
-                                        </div>
+                                        </details>
                                     );
                                 })}
                             </div>
