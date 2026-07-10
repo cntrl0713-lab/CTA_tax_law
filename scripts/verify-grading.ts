@@ -537,18 +537,23 @@ async function main() {
     // ── 판정 ──
     const checks: { name: string; pass: boolean }[] = []
 
+    // 부분 점수가 소수(예: 0.4)로 나올 수 있어 JS 덧셈 자체가 미세한 부동소수점 오차를
+    // 낳는다(0.4+0.8=1.2000000000000002 등) — 이는 채점 로직의 버그가 아니라 IEEE754의
+    // 근본적 한계이므로, 산술 일관성 검사는 엄격한 ===이 아니라 허용오차 비교로 판정한다.
+    const approxEqual = (a: number, b: number) => Math.abs(a - b) < 1e-6
+
     // [공통, 모든 모드] 버그 2: 응답 내부 산술 일관성
     for (const sq of result.subquestions) {
         const rubricSum = sq.rubricResults.reduce((s, r) => s + r.awardedScore, 0)
         checks.push({
             name: `물음 ${sq.number} 루브릭 합산(${rubricSum}) === 물음 점수(${sq.awardedScore})`,
-            pass: rubricSum === sq.awardedScore,
+            pass: approxEqual(rubricSum, sq.awardedScore),
         })
     }
     const sqSum = result.subquestions.reduce((s, sq) => s + sq.awardedScore, 0)
     checks.push({
         name: `물음 점수 합산(${sqSum}) === 총점(${result.totalScore})`,
-        pass: sqSum === result.totalScore,
+        pass: approxEqual(sqSum, result.totalScore),
     })
 
     // [공통, 모든 모드] 버그 1: 유령 근거(무근거 만점) — gradeProblem.ts 내부 함수를 가져다 쓰지 않고 독립 재구현

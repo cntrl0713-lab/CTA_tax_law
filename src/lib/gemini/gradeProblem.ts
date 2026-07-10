@@ -45,6 +45,12 @@ function normalizeForEvidenceMatch(text: string): string {
     return text.normalize('NFC').replace(/[\s·.,'"“”‘’()[\]「」『』〈〉《》:;!?~-]/g, '')
 }
 
+// 모델이 부분 점수를 소수(예: 0.4)로 반환하는 경우, JS 부동소수점 덧셈 누적 오차로
+// 총점이 1.2000000000000002 같은 값이 되어 화면에 그대로 노출될 수 있어 합산 때마다 보정한다.
+function round2(n: number): number {
+    return Math.round(n * 100) / 100
+}
+
 /**
  * DB의 max_score/score/total_score를 신뢰 기준으로 삼아 배점 필드를 교정하고,
  * rubricResults → subquestion → total 순으로 합산 점수를 재계산합니다.
@@ -83,14 +89,14 @@ function normalizeScoresAgainstRubrics(
             }
             const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
             // unmet은 정의상 0점(시스템 프롬프트 규칙 6), 나머지는 [0, maxScore]로 클램프
-            const awardedScore = rr.status === 'unmet' ? 0 : Math.min(Math.max(rr.awardedScore, 0), maxScore)
+            const awardedScore = rr.status === 'unmet' ? 0 : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
             // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
             const status = awardedScore === 0 ? 'unmet' : rr.status
             return { ...rr, maxScore, awardedScore, status }
         })
 
-        const awardedScoreRaw = rubricResults.reduce((s, r) => s + r.awardedScore, 0)
+        const awardedScoreRaw = round2(rubricResults.reduce((s, r) => s + r.awardedScore, 0))
         const awardedScore = Math.min(awardedScoreRaw, dbSq.score)
         if (awardedScoreRaw !== awardedScore) {
             console.warn(
@@ -101,7 +107,7 @@ function normalizeScoresAgainstRubrics(
         return { ...sq, maxScore: dbSq.score, rubricResults, awardedScore }
     })
 
-    const totalScoreRaw = subquestions.reduce((s, sq) => s + sq.awardedScore, 0)
+    const totalScoreRaw = round2(subquestions.reduce((s, sq) => s + sq.awardedScore, 0))
     const totalScore = Math.min(totalScoreRaw, problem.total_score)
 
     return { ...parsed, subquestions, totalScore }
