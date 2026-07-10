@@ -160,6 +160,19 @@ a {
   border-radius: var(--radius-md);
 }
 
+.btn-kakaotalk {
+  background: #FEE500;
+  color: #191919;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(254, 229, 0, 0.2);
+}
+
+.btn-kakaotalk:hover {
+  background: #FADA0A;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(254, 229, 0, 0.35);
+}
+
 /* ── 카드 ── */
 .card {
   background: var(--gradient-card);

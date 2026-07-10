@@ -25,6 +25,14 @@ export default async function RootLayout({
             📝 세법학 <span>AI 채점</span>
           </Link>
           <div className="navbar-actions">
+            <a
+              href={process.env.NEXT_PUBLIC_KAKAOTALK_URL || 'https://open.kakao.com'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost btn-sm"
+            >
+              💬 문의하기
+            </a>
             {user ? (
               <>
                 <span className="navbar-user">{(user as Record<string, unknown>).email as string}</span>

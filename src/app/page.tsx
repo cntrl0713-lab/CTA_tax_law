@@ -34,6 +34,16 @@ export default async function HomePage() {
           세법 사례형 문제를 풀고, AI가 설정된 채점 기준에 따라 즉시 부분 채점합니다.
           소문항별 상세 피드백으로 실력을 키워보세요.
         </p>
+        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
+          <a
+            href={process.env.NEXT_PUBLIC_KAKAOTALK_URL || 'https://open.kakao.com'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-kakaotalk btn-lg"
+          >
+            💬 카카오톡 오픈채팅 문의하기
+          </a>
+        </div>
       </section>
 
       <div className="container">
