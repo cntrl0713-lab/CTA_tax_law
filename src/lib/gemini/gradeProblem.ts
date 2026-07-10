@@ -4,6 +4,347 @@ import type { SubquestionAnswer, GradeResponse } from '@/types/grading'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
+// 일시적 서버 오류(용량 초과·내부 오류 등)에 재시도할 HTTP 상태 코드
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
+const MAX_RETRIES = 4
+
+/**
+ * Gemini 호출을 감싸 일시적 오류(503 등)에 지수 백오프로 재시도합니다.
+ * 4xx(400·401·403·404 등) 영구 오류는 재시도하지 않고 즉시 던집니다.
+ */
+async function generateContentWithRetry(
+    params: Parameters<typeof ai.models.generateContent>[0]
+): ReturnType<typeof ai.models.generateContent> {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await ai.models.generateContent(params)
+        } catch (err) {
+            const status = (err as { status?: number })?.status
+            const retryable = status !== undefined && RETRYABLE_STATUS.has(status)
+            if (!retryable || attempt >= MAX_RETRIES) throw err
+            // 0.5s → 1s → 2s → 4s + 지터(최대 250ms)
+            const backoff = 500 * 2 ** attempt + Math.floor(Math.random() * 250)
+            console.warn(
+                `[grading] Gemini ${status} 오류, ${backoff}ms 후 재시도 (${attempt + 1}/${MAX_RETRIES})`
+            )
+            await new Promise((resolve) => setTimeout(resolve, backoff))
+        }
+    }
+}
+
+// ── 유령 근거(무근거 만점) 탐지용 휴리스틱 상수. 실행 결과 보고 튜닝 필요 ──
+const MIN_EVIDENCE_QUOTE_LENGTH = 6 // 정규화 후 최소 글자 수 (조사 1개 등 무의미한 매칭 방지)
+// 인용문이 답안 전체와 거의 같아도 "복붙 방지"로 취급하지 않는다: 한 물음의 답안이 짧고
+// 특정 루브릭 한 개만 다루는 경우(예: 판례 법리만 서술) 답안 전체를 인용하는 것이 정확한
+// 근거일 수 있음을 실측으로 확인했음 — 답안 전체 복붙 여부만으로는 무의미 근거를 판별할 수 없음
+
+type ParsedGradeResult = Omit<GradeResponse, 'problemId' | 'maxScore' | '_diagnostics'>
+
+/** 공백·주요 문장부호를 제거해 인용 대조 전용으로 정규화합니다. */
+function normalizeForEvidenceMatch(text: string): string {
+    return text.normalize('NFC').replace(/[\s·.,'"“”‘’()[\]「」『』〈〉《》:;!?~-]/g, '')
+}
+
+/**
+ * DB의 max_score/score/total_score를 신뢰 기준으로 삼아 배점 필드를 교정하고,
+ * rubricResults → subquestion → total 순으로 합산 점수를 재계산합니다.
+ * 모델의 판단(어느 기준에 점수를 줄지, status가 무엇인지)은 건드리지 않고
+ * "배점의 출처"와 "합산 산술"만 교정하는 순수 함수입니다.
+ */
+function normalizeScoresAgainstRubrics(
+    parsed: ParsedGradeResult,
+    problem: ProblemWithDetails
+): ParsedGradeResult {
+    const sqByNumber = new Map(problem.cta_subquestion.map((sq) => [sq.number, sq]))
+
+    const subquestions = parsed.subquestions.map((sq) => {
+        const dbSq = sqByNumber.get(sq.number)
+        if (!dbSq) {
+            console.warn(`[grading] 물음 ${sq.number}에 대응하는 DB 소문항이 없어 배점 교정을 건너뜁니다.`)
+            const awardedScore = sq.rubricResults.reduce(
+                (s, r) => s + (r.status === 'unmet' ? 0 : r.awardedScore),
+                0
+            )
+            return { ...sq, awardedScore }
+        }
+
+        const rubricsByName = new Map(
+            dbSq.cta_subquestion_rubric.map((r) => [normalizeForEvidenceMatch(r.criterion_name), r])
+        )
+        const rubricsInOrder = [...dbSq.cta_subquestion_rubric].sort((a, b) => a.display_order - b.display_order)
+
+        const rubricResults = sq.rubricResults.map((rr, idx) => {
+            let dbRubric = rubricsByName.get(normalizeForEvidenceMatch(rr.criterionName))
+            if (!dbRubric && rubricsInOrder[idx]) {
+                dbRubric = rubricsInOrder[idx] // 이름 불일치 시 위치 기반 폴백
+                console.warn(
+                    `[grading] 물음 ${sq.number} 기준명 "${rr.criterionName}"이 DB와 일치하지 않아 위치(${idx})로 대체 매칭했습니다.`
+                )
+            }
+            const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
+            // unmet은 정의상 0점(시스템 프롬프트 규칙 6), 나머지는 [0, maxScore]로 클램프
+            const awardedScore = rr.status === 'unmet' ? 0 : Math.min(Math.max(rr.awardedScore, 0), maxScore)
+            // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
+            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
+            const status = awardedScore === 0 ? 'unmet' : rr.status
+            return { ...rr, maxScore, awardedScore, status }
+        })
+
+        const awardedScoreRaw = rubricResults.reduce((s, r) => s + r.awardedScore, 0)
+        const awardedScore = Math.min(awardedScoreRaw, dbSq.score)
+        if (awardedScoreRaw !== awardedScore) {
+            console.warn(
+                `[grading] 물음 ${sq.number} 루브릭 합산(${awardedScoreRaw})이 배점(${dbSq.score})을 초과해 절삭했습니다.`
+            )
+        }
+
+        return { ...sq, maxScore: dbSq.score, rubricResults, awardedScore }
+    })
+
+    const totalScoreRaw = subquestions.reduce((s, sq) => s + sq.awardedScore, 0)
+    const totalScore = Math.min(totalScoreRaw, problem.total_score)
+
+    return { ...parsed, subquestions, totalScore }
+}
+
+interface Contradiction {
+    subquestionNumber: number
+    criterionName: string
+    evidenceQuote: string
+    reason: 'missing_evidence' | 'evidence_not_in_answer' | 'evidence_too_trivial' | 'evidence_present_but_unmet'
+}
+
+/**
+ * "충족(met/partially_met) + 0점 초과"로 판정했음에도 근거 인용이 없거나, 답안에 실제로
+ * 존재하지 않거나, 근거로서 무의미(조사 한 개 등 지나치게 짧음)한 루브릭 결과를 찾습니다.
+ * 완결성(요건을 "완전히" 충족했는지)은 판단하지 않고 "인용문이 답안에 실존하는가"만 확인합니다.
+ * 인용문이 답안 전체와 겹치더라도, 그 자체로는 무의미하다고 보지 않습니다(실측 결과: 답안이
+ * 짧고 특정 루브릭 하나만 다루는 경우 답안 전체 인용이 정확한 근거일 수 있음).
+ */
+function findPhantomEvidence(result: ParsedGradeResult, answers: SubquestionAnswer[]): Contradiction[] {
+    const answerByNumber = new Map(answers.map((a) => [a.subquestionNumber, a.answerText || '']))
+    const contradictions: Contradiction[] = []
+
+    for (const sq of result.subquestions) {
+        const normalizedAnswer = normalizeForEvidenceMatch(answerByNumber.get(sq.number) ?? '')
+
+        for (const rr of sq.rubricResults) {
+            const credited = rr.status !== 'unmet' && rr.awardedScore > 0
+            if (!credited) continue // 미충족/0점은 근거 검증 대상이 아님 (정상)
+
+            const quote = (rr.evidenceQuote || '').trim()
+            if (quote.length === 0) {
+                contradictions.push({
+                    subquestionNumber: sq.number,
+                    criterionName: rr.criterionName,
+                    evidenceQuote: rr.evidenceQuote,
+                    reason: 'missing_evidence',
+                })
+                continue
+            }
+
+            const normalizedQuote = normalizeForEvidenceMatch(quote)
+            const tooShort = normalizedQuote.length < MIN_EVIDENCE_QUOTE_LENGTH
+
+            if (tooShort) {
+                contradictions.push({
+                    subquestionNumber: sq.number,
+                    criterionName: rr.criterionName,
+                    evidenceQuote: rr.evidenceQuote,
+                    reason: 'evidence_too_trivial',
+                })
+                continue
+            }
+
+            if (!normalizedAnswer.includes(normalizedQuote)) {
+                contradictions.push({
+                    subquestionNumber: sq.number,
+                    criterionName: rr.criterionName,
+                    evidenceQuote: rr.evidenceQuote,
+                    reason: 'evidence_not_in_answer',
+                })
+            }
+        }
+    }
+    return contradictions
+}
+
+/**
+ * findPhantomEvidence의 대칭 케이스: unmet+0점으로 판정했음에도 모델 스스로 채운 evidenceQuote가
+ * 실제로 답안에 존재하는 루브릭 결과를 찾습니다. (관측된 원인: 여러 물음을 한 번에 채점할 때
+ * 특정 물음·기준에서 실제로는 근거를 찾았으면서도 점수를 억눌러 unmet 처리하는 현상 — 같은 답안을
+ * 해당 물음만 단독으로 채점하면 정상적으로 점수를 받는 것으로 실측 확인됨. 정상 케이스인 "근거 없어
+ * 정당하게 unmet"과 구분하기 위해, 인용문이 비어있거나 너무 짧은 경우는 건드리지 않습니다.
+ */
+function findSuppressedEvidence(result: ParsedGradeResult, answers: SubquestionAnswer[]): Contradiction[] {
+    const answerByNumber = new Map(answers.map((a) => [a.subquestionNumber, a.answerText || '']))
+    const contradictions: Contradiction[] = []
+
+    for (const sq of result.subquestions) {
+        const normalizedAnswer = normalizeForEvidenceMatch(answerByNumber.get(sq.number) ?? '')
+
+        for (const rr of sq.rubricResults) {
+            if (rr.status !== 'unmet') continue // met/partially_met은 findPhantomEvidence가 담당
+
+            const quote = (rr.evidenceQuote || '').trim()
+            if (quote.length === 0) continue // 정상: 근거 없음 + unmet
+
+            const normalizedQuote = normalizeForEvidenceMatch(quote)
+            if (normalizedQuote.length < MIN_EVIDENCE_QUOTE_LENGTH) continue // 너무 짧아 신뢰 어려움
+
+            if (normalizedAnswer.includes(normalizedQuote)) {
+                contradictions.push({
+                    subquestionNumber: sq.number,
+                    criterionName: rr.criterionName,
+                    evidenceQuote: rr.evidenceQuote,
+                    reason: 'evidence_present_but_unmet',
+                })
+            }
+        }
+    }
+    return contradictions
+}
+
+interface Correction {
+    subquestionNumber: number
+    criterionName: string
+    evidenceQuote: string
+    status: 'met' | 'partially_met' | 'unmet'
+    awardedScore: number
+}
+
+/**
+ * 교정 재시도용 축소 스키마. 전체 응답을 다시 생성시키면 모델이 "다른 기준은 그대로 두라"는
+ * 지시를 안정적으로 지키지 못해(관측됨: 무관한 물음까지 0점으로 붕괴) 무관한 물음에 부수 피해가
+ * 생길 수 있으므로, 모순이 발견된 기준만 담은 corrections 배열만 반환하도록 강제합니다.
+ */
+const CORRECTION_SCHEMA = {
+    type: Type.OBJECT,
+    properties: {
+        corrections: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    subquestionNumber: { type: Type.NUMBER, description: '물음 번호' },
+                    criterionName: { type: Type.STRING, description: '루브릭 기준명 (제시된 것과 정확히 동일하게)' },
+                    evidenceQuote: { type: Type.STRING, description: '답안 원문에서 그대로 가져온 인용문. 근거가 없으면 빈 문자열' },
+                    status: { type: Type.STRING, description: '기준 충족 여부 (met | partially_met | unmet)' },
+                    awardedScore: { type: Type.NUMBER, description: '획득 점수' },
+                },
+                propertyOrdering: ['subquestionNumber', 'criterionName', 'evidenceQuote', 'status', 'awardedScore'],
+                required: ['subquestionNumber', 'criterionName', 'evidenceQuote', 'status', 'awardedScore'],
+            },
+        },
+    },
+    required: ['corrections'],
+}
+
+/** 유령 근거·억눌린 근거가 발견된 기준만 콕 집어 재평가를 요청하는 후속 사용자 턴 메시지를 만듭니다. */
+function buildCorrectionRequest(contradictions: Contradiction[]): string {
+    const reasonText = (c: Contradiction) => {
+        switch (c.reason) {
+            case 'missing_evidence':
+                return '점수를 부여했지만 근거 인용문(evidenceQuote)이 비어 있음'
+            case 'evidence_not_in_answer':
+                return `점수를 부여했지만 인용한 문구("${c.evidenceQuote}")가 실제 답안에 존재하지 않음`
+            case 'evidence_too_trivial':
+                return `점수를 부여했지만 인용문이 너무 짧아 유효한 근거로 볼 수 없음("${c.evidenceQuote}")`
+            case 'evidence_present_but_unmet':
+                return `unmet(0점)으로 판정했지만, 스스로 인용한 문구("${c.evidenceQuote}")가 실제로 답안에 존재함 — 부당하게 0점 처리된 것은 아닌지 재확인 필요`
+        }
+    }
+
+    const lines = contradictions.map((c) => `- 물음 ${c.subquestionNumber} / 기준 "${c.criterionName}": ${reasonText(c)}`)
+
+    return `방금 채점한 결과 중 아래 채점 기준들의 점수 판정을 다시 확인해야 합니다.
+${lines.join('\n')}
+
+이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과만 corrections 배열로 반환하세요.
+- 다른 물음이나 다른 채점 기준의 판정에 얽매이지 말고, 지금 재검토하는 기준 하나만 놓고 이 물음의 답안을 독립적으로 다시 읽으세요.
+- 답안에 실제로 있는 문장을 그대로 evidenceQuote로 인용할 수 있는 경우에만 met 또는 partially_met과 0보다 큰 점수를 부여하세요.
+- 답안에 해당 내용이 전혀 없다면 반드시 status를 unmet, awardedScore를 0, evidenceQuote를 빈 문자열로 하세요.
+- 위에 나열되지 않은 다른 물음이나 채점 기준은 절대 언급하거나 포함하지 마세요.`
+}
+
+/**
+ * 교정 응답의 corrections를 원본 결과에 병합합니다. 모델이 무엇을 반환하든, 애초에 모순으로
+ * 식별된 (물음, 기준) 키에 해당하는 항목만 반영합니다 — 그 외 물음/기준/feedback/총평은
+ * 1차 결과 그대로 유지되어 무관한 항목에 대한 부수 피해를 코드 수준에서 원천 차단합니다.
+ */
+function applyCorrections(
+    result: ParsedGradeResult,
+    contradictions: Contradiction[],
+    corrections: Correction[]
+): ParsedGradeResult {
+    const key = (subquestionNumber: number, criterionName: string) =>
+        `${subquestionNumber}::${normalizeForEvidenceMatch(criterionName)}`
+    const flaggedKeys = new Set(contradictions.map((c) => key(c.subquestionNumber, c.criterionName)))
+    const byKey = new Map(
+        corrections
+            .filter((c) => flaggedKeys.has(key(c.subquestionNumber, c.criterionName)))
+            .map((c) => [key(c.subquestionNumber, c.criterionName), c])
+    )
+
+    return {
+        ...result,
+        subquestions: result.subquestions.map((sq) => {
+            const appliedNames: string[] = []
+            const rubricResults = sq.rubricResults.map((rr) => {
+                const c = byKey.get(key(sq.number, rr.criterionName))
+                if (!c) return rr
+                appliedNames.push(rr.criterionName)
+                return { ...rr, evidenceQuote: c.evidenceQuote, status: c.status, awardedScore: c.awardedScore }
+            })
+            if (appliedNames.length === 0) return { ...sq, rubricResults }
+            return {
+                ...sq,
+                rubricResults,
+                feedback: `${sq.feedback} [자동 재검토: "${appliedNames.join('", "')}" 근거 재확인 후 교정됨]`,
+            }
+        }),
+    }
+}
+
+/**
+ * 재시도 이후에도 남은 모순에 대해, 해당 루브릭 결과만 강제로 awardedScore=0, status='unmet'으로
+ * 되돌립니다(evidence_present_but_unmet의 경우 이미 0점/unmet이므로 사실상 유지). 합산 재계산은
+ * 호출부에서 normalizeScoresAgainstRubrics를 다시 호출해 수행합니다(단일 책임 유지). 순수 함수입니다.
+ */
+function forceZeroOutContradictions(
+    result: ParsedGradeResult,
+    contradictions: Contradiction[]
+): ParsedGradeResult {
+    if (contradictions.length === 0) return result
+
+    const flagged = new Set(contradictions.map((c) => `${c.subquestionNumber}::${c.criterionName}`))
+    const namesBySq = new Map<number, string[]>()
+    for (const c of contradictions) {
+        const note =
+            c.reason === 'evidence_present_but_unmet'
+                ? `"${c.criterionName}"(재검토 후에도 0점 유지)`
+                : `"${c.criterionName}"(근거 미확인으로 0점 처리됨)`
+        namesBySq.set(c.subquestionNumber, [...(namesBySq.get(c.subquestionNumber) ?? []), note])
+    }
+
+    return {
+        ...result,
+        subquestions: result.subquestions.map((sq) => {
+            const names = namesBySq.get(sq.number)
+            if (!names) return sq
+            return {
+                ...sq,
+                feedback: `${sq.feedback} [자동 검증: ${names.join(', ')}]`,
+                rubricResults: sq.rubricResults.map((rr) =>
+                    flagged.has(`${sq.number}::${rr.criterionName}`)
+                        ? { ...rr, awardedScore: 0, status: 'unmet' as const }
+                        : rr
+                ),
+            }
+        }),
+    }
+}
+
 /**
  * Gemini 2.5 Flash-Lite를 호출하여 구조화된 JSON 채점 결과를 반환합니다.
  */
@@ -47,7 +388,10 @@ ${answer?.answerText || '(답안 미작성)'}
 6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
 7. 설명이 부실하거나 핵심 요건(수치, 법적 절차 요건 등) 중 일부가 누락된 경우 절대로 만점(met)을 주지 말고 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오.
 8. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
-9. 모든 응답은 한국어로 작성하세요.`
+9. 모든 응답은 한국어로 작성하세요.
+10. 각 채점 기준의 evidenceQuote에는 반드시 수험생 답안 원문에 실제로 있는 문장/구절을 그대로(축약·의역 없이) 옮겨 적으세요. 답안에 없는 내용을 근거로 점수를 주지 마세요.
+11. 답안에 해당 기준을 뒷받침하는 문장이 전혀 없다면, 다른 부분이 아무리 훌륭해도 그 기준은 반드시 unmet과 0점으로 처리하고 evidenceQuote는 빈 문자열로 남기세요. 근거를 인용할 수 없는 기준에 점수를 부여하는 것은 심각한 채점 오류입니다.
+12. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.`
 
     const userPrompt = `
 ## 문제 정보
@@ -63,51 +407,61 @@ ${problem.issue_text_compact || problem.issue_text_full || '(쟁점 없음)'}
 ${subquestionPrompts.join('\n---\n')}
 `
 
-    // ── Gemini 호출 (구조화 출력) ──
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
-        contents: userPrompt,
-        config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
-            temperature: 0,
-            // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
-            thinkingConfig: { thinkingBudget: 1024 },
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    totalScore: { type: Type.NUMBER, description: '수험생 총 획득 점수' },
-                    subquestions: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                number: { type: Type.NUMBER, description: '물음 번호' },
-                                awardedScore: { type: Type.NUMBER, description: '획득 점수' },
-                                maxScore: { type: Type.NUMBER, description: '배점' },
-                                feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
-                                rubricResults: {
-                                    type: Type.ARRAY,
-                                    items: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            criterionName: { type: Type.STRING, description: '루브릭 기준명' },
-                                            awardedScore: { type: Type.NUMBER, description: '획득 점수' },
-                                            maxScore: { type: Type.NUMBER, description: '배점' },
-                                            status: { type: Type.STRING, description: '기준 충족 여부 (met: 완벽 충족, partially_met: 부분 충족, unmet: 미충족)' },
+    // 1차 호출과 보정 재시도가 동일한 스키마를 쓰도록 지역 상수로 추출 (drift 방지)
+    const config = {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json' as const,
+        temperature: 0,
+        // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
+        thinkingConfig: { thinkingBudget: 1024 },
+        responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+                totalScore: { type: Type.NUMBER, description: '수험생 총 획득 점수' },
+                subquestions: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            number: { type: Type.NUMBER, description: '물음 번호' },
+                            awardedScore: { type: Type.NUMBER, description: '획득 점수' },
+                            maxScore: { type: Type.NUMBER, description: '배점' },
+                            feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
+                            rubricResults: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        criterionName: { type: Type.STRING, description: '루브릭 기준명' },
+                                        evidenceQuote: {
+                                            type: Type.STRING,
+                                            description:
+                                                '이 기준을 met 또는 partially_met으로 판단한 근거가 되는, 수험생 답안 원문에서 그대로(변형 없이) 가져온 인용문. ' +
+                                                '답안에 해당 근거가 전혀 없어 unmet으로 판단하는 경우에는 빈 문자열("")로 두세요. 답안에 없는 내용을 지어내거나 답안 전체를 그대로 복사하지 마세요.',
                                         },
-                                        required: ['criterionName', 'awardedScore', 'maxScore', 'status'],
+                                        status: { type: Type.STRING, description: '기준 충족 여부 (met: 완벽 충족, partially_met: 부분 충족, unmet: 미충족)' },
+                                        awardedScore: { type: Type.NUMBER, description: '획득 점수' },
+                                        maxScore: { type: Type.NUMBER, description: '배점' },
                                     },
+                                    propertyOrdering: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
+                                    required: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
                                 },
                             },
-                            required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
                         },
+                        required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
                     },
-                    overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 80자 이내로 간결히 요약)' },
                 },
-                required: ['totalScore', 'subquestions', 'overallComment'],
+                overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 80자 이내로 간결히 요약)' },
             },
+            required: ['totalScore', 'subquestions', 'overallComment'],
         },
+    }
+
+    // ── 1차 Gemini 호출 (구조화 출력, 일시 오류 시 지수 백오프 재시도) ──
+    const response = await generateContentWithRetry({
+        model: 'gemini-2.5-flash-lite',
+        contents: userPrompt,
+        config,
     })
 
     const text = response.text
@@ -115,13 +469,67 @@ ${subquestionPrompts.join('\n---\n')}
         throw new Error('Gemini 응답이 비어 있습니다.')
     }
 
-    const parsed = JSON.parse(text) as Omit<GradeResponse, 'problemId' | 'maxScore'>
+    const parsed = JSON.parse(text) as ParsedGradeResult
+
+    // 버그 2(산술 불일치) 수정: 배점 출처를 DB로 교정하고 합산을 재계산 — 항상 적용
+    let normalized = normalizeScoresAgainstRubrics(parsed, problem)
+
+    // 버그 1(유령 근거) + 대칭 케이스(근거는 있는데 unmet으로 억눌림, 주로 다물음 동시채점 시 발생) 탐지 및 교정
+    const contradictions = [...findPhantomEvidence(normalized, answers), ...findSuppressedEvidence(normalized, answers)]
+    let diagnostics: GradeResponse['_diagnostics'] | undefined
+
+    if (contradictions.length > 0) {
+        const describe = (cs: Contradiction[]) => cs.map((c) => `물음 ${c.subquestionNumber} - ${c.criterionName} (${c.reason})`)
+        try {
+            // 스코프 축소형 교정 재시도: 전체 JSON을 다시 생성시키지 않고, 모순이 발견된
+            // 기준만 재판정받아 코드에서 병합합니다 — 무관한 물음에 대한 부수 피해를 원천 차단합니다.
+            const correctionResponse = await generateContentWithRetry({
+                model: 'gemini-2.5-flash-lite',
+                contents: [
+                    { role: 'user', parts: [{ text: userPrompt }] },
+                    { role: 'model', parts: [{ text }] },
+                    { role: 'user', parts: [{ text: buildCorrectionRequest(contradictions) }] },
+                ],
+                config: {
+                    systemInstruction: systemPrompt,
+                    responseMimeType: 'application/json' as const,
+                    temperature: 0,
+                    thinkingConfig: { thinkingBudget: 1024 },
+                    responseSchema: CORRECTION_SCHEMA,
+                },
+            })
+            const correctionText = correctionResponse.text
+            if (!correctionText) throw new Error('교정 재시도 응답이 비어 있습니다.')
+
+            const { corrections } = JSON.parse(correctionText) as { corrections: Correction[] }
+            let patched = normalizeScoresAgainstRubrics(
+                applyCorrections(normalized, contradictions, corrections),
+                problem
+            )
+            const remaining = [...findPhantomEvidence(patched, answers), ...findSuppressedEvidence(patched, answers)]
+
+            if (remaining.length > 0) {
+                console.warn('[grading] 유령 근거 교정 재시도 후에도 모순 잔존, 강제 0점 처리:', remaining)
+                patched = normalizeScoresAgainstRubrics(forceZeroOutContradictions(patched, remaining), problem)
+            }
+            normalized = patched
+            diagnostics = {
+                retried: true,
+                contradictions: describe(remaining.length > 0 ? remaining : contradictions),
+            }
+        } catch (err) {
+            console.warn('[grading] 유령 근거 교정 재시도 실패, 원본 결과에서 강제 0점 처리:', err, contradictions)
+            normalized = normalizeScoresAgainstRubrics(forceZeroOutContradictions(normalized, contradictions), problem)
+            diagnostics = { retried: false, contradictions: describe(contradictions) }
+        }
+    }
 
     return {
         problemId: problem.id,
         maxScore: problem.total_score,
-        totalScore: parsed.totalScore,
-        subquestions: parsed.subquestions,
-        overallComment: parsed.overallComment,
+        totalScore: normalized.totalScore,
+        subquestions: normalized.subquestions,
+        overallComment: normalized.overallComment,
+        ...(diagnostics ? { _diagnostics: diagnostics } : {}),
     }
 }
