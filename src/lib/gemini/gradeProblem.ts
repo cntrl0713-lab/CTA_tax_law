@@ -17,8 +17,9 @@ export async function gradeProblem(
         const rubrics = sq.cta_subquestion_rubric
             .sort((a, b) => a.display_order - b.display_order)
             .map((r) => {
-                const desc = r.description_compact || r.description_display
-                return `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${desc ? `\n    설명: ${desc}` : ''}${r.keywords_json ? `\n    키워드: ${JSON.stringify(r.keywords_json)}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
+                // 채점 정확도를 위해 기준 설명은 전문(full)을 우선 사용 (compact는 정보 손실로 오채점 유발)
+                const desc = r.description_display || r.description_compact
+                return `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${desc ? `\n    설명: ${desc}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
             })
             .join('\n')
 
@@ -41,7 +42,7 @@ ${answer?.answerText || '(답안 미작성)'}
 1. 각 물음의 배점을 절대 초과하지 마세요.
 2. 각 루브릭 기준별로 배점 내에서 점수를 부여하세요.
 3. 루브릭의 max_score를 초과하지 마세요.
-4. 핵심 키워드와 논리 구조를 중심으로 평가하세요.
+4. 논리 구조를 중심으로 평가하세요.
 5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
 6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
 7. 설명이 부실하거나 핵심 요건(수치, 법적 절차 요건 등) 중 일부가 누락된 경우 절대로 만점(met)을 주지 말고 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오.
@@ -69,7 +70,9 @@ ${subquestionPrompts.join('\n---\n')}
         config: {
             systemInstruction: systemPrompt,
             responseMimeType: 'application/json',
-            temperature: 0.2,
+            temperature: 0,
+            // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
+            thinkingConfig: { thinkingBudget: 1024 },
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
