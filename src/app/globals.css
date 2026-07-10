@@ -1,41 +1,59 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* 색상 시스템 */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-card: #1a1a2e;
-  --bg-card-hover: #1e1e35;
-  --bg-elevated: #252540;
-  --bg-input: #16162a;
+  /* Claude 에디토리얼 색상 시스템 */
+  --bg-primary: #faf9f5;
+  /* canvas: 기본 크림 배경 */
+  --bg-secondary: #f5f0e8;
+  /* surface-soft */
+  --bg-card: #efe9de;
+  /* surface-card */
+  --bg-card-hover: #e8e0d2;
+  /* surface-cream-strong */
+  --bg-elevated: #efe9de;
+  --bg-input: #faf9f5;
 
-  --text-primary: #f0f0ff;
-  --text-secondary: #a0a0c0;
-  --text-muted: #6a6a8e;
+  --text-primary: #141413;
+  /* ink: 가 짙은 먹색 */
+  --text-secondary: #3d3d3a;
+  /* body: 본물 글자색 */
+  --text-muted: #6c6a64;
+  /* muted */
 
-  --accent-primary: #6c5ce7;
-  --accent-primary-hover: #7d6fef;
-  --accent-secondary: #00cec9;
-  --accent-success: #00b894;
-  --accent-warning: #fdcb6e;
-  --accent-danger: #e17055;
+  --accent-primary: #cc785c;
+  /* coral: 시그니처 코랄 */
+  --accent-primary-hover: #a9583e;
+  /* coral active: 코랄 호버색 */
+  --accent-secondary: #5db8a6;
+  /* accent-teal */
+  --accent-success: #5db872;
+  /* success */
+  --accent-warning: #d4a017;
+  /* warning */
+  --accent-danger: #c64545;
+  /* error */
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
+  --border-subtle: #e6dfd8;
+  /* hairline */
+  --border-default: #ebe6df;
+  /* hairline-soft */
 
-  --gradient-primary: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
-  --gradient-card: linear-gradient(145deg, rgba(26, 26, 46, 0.8), rgba(22, 22, 42, 0.4));
-  --gradient-hero: linear-gradient(180deg, #0a0a1a 0%, #12122a 50%, #0a0a0f 100%);
+  --gradient-primary: linear-gradient(135deg, #cc785c 0%, #e8a55a 100%);
+  --gradient-card: linear-gradient(145deg, #efe9de 0%, #f5f0e8 100%);
+  --gradient-hero: linear-gradient(180deg, #faf9f5 0%, #f5f0e8 100%);
 
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
-  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 3px rgba(20, 20, 19, 0.08);
+  --shadow-elevated: 0 4px 12px rgba(20, 20, 19, 0.08);
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
 
-  --font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* 폰트 스택 설정 */
+  --font-sans: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: 'Cormorant Garamond', Garamond, 'Times New Roman', serif;
+  --font-family: var(--font-sans);
 }
 
 * {
@@ -45,7 +63,8 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
+  /* 라이트/크림 모드로 전환 */
 }
 
 body {
@@ -71,7 +90,8 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 16px 32px;
-  background: rgba(10, 10, 15, 0.85);
+  background: rgba(250, 249, 245, 0.85);
+  /* 크림 캔버스 반투명 처리 */
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -79,19 +99,23 @@ a {
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 1.25rem;
-  font-weight: 700;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  gap: 8px;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
 }
 
 .navbar-brand span {
+  font-family: var(--font-sans);
   font-size: 0.75rem;
-  font-weight: 400;
-  -webkit-text-fill-color: var(--text-muted);
+  font-weight: 500;
+  color: var(--accent-primary);
+  /* 코랄 포인트 적용 */
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
 }
 
 .navbar-actions {
@@ -193,6 +217,15 @@ a {
   display: block;
 }
 
+h1,
+h2,
+h3,
+.problem-header h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
 /* ── 히어로 ── */
 .hero {
   text-align: center;
@@ -201,13 +234,12 @@ a {
 }
 
 .hero h1 {
-  font-size: 2.5rem;
-  font-weight: 700;
+  font-family: var(--font-serif);
+  font-size: 2.8rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   margin-bottom: 16px;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .hero p {
@@ -240,8 +272,10 @@ a {
 
 /* ── 섹션 타이틀 ── */
 .section-title {
-  font-size: 1.3rem;
-  font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   margin-bottom: 24px;
   color: var(--text-primary);
 }
@@ -334,6 +368,9 @@ a {
 
 .case-text {
   background: var(--bg-secondary);
+  /* 부드러운 크림 Soft-Cream */
+  color: var(--text-primary);
+  /* 잉크 텍스트색 */
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 24px;
@@ -347,6 +384,7 @@ a {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--accent-secondary);
+  /* accent-teal (#5db8a6) */
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-bottom: 12px;
@@ -372,6 +410,7 @@ a {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--accent-primary);
+  /* coral */
 }
 
 .subquestion-score {
@@ -390,21 +429,24 @@ a {
   width: 100%;
   min-height: 160px;
   padding: 16px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-default);
+  background: #ffffff;
+  /* 입력 가독성을 위한 부드러운 흰색 */
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
+  /* 잉크 텍스트색 */
   font-family: var(--font-family);
   font-size: 0.9rem;
   line-height: 1.7;
   resize: vertical;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .answer-textarea:focus {
   outline: none;
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.15);
+  box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.15);
+  /* 코랄 반투명 포커스 링 */
 }
 
 .answer-textarea::placeholder {
@@ -438,11 +480,13 @@ a {
 
 .result-summary {
   background: var(--bg-card);
+  /* 카드 크림색 (#efe9de) */
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 32px;
   text-align: center;
   margin-bottom: 24px;
+  color: var(--text-primary);
 }
 
 .result-total-score {
@@ -463,15 +507,18 @@ a {
   margin-top: 16px;
   font-size: 0.95rem;
   color: var(--text-secondary);
+  /* 가독성 높은 어두운 본문색 */
   line-height: 1.7;
 }
 
 .result-subquestion {
   background: var(--bg-card);
+  /* 카드 크림색 (#efe9de) */
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 24px;
   margin-bottom: 16px;
+  color: var(--text-primary);
 }
 
 .result-sq-header {
@@ -489,6 +536,7 @@ a {
 .result-sq-feedback {
   font-size: 0.9rem;
   color: var(--text-secondary);
+  /* 어두운 피드백 코멘트 글씨 */
   margin-bottom: 16px;
   line-height: 1.7;
 }
@@ -504,9 +552,11 @@ a {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: var(--bg-elevated);
+  background: var(--bg-secondary);
+  /* 부모 카드(#efe9de)와 대조되는 부드러운 베이지 */
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
+  border: 1px solid var(--border-subtle);
 }
 
 .rubric-met {
