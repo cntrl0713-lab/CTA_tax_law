@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { HintResponse } from '@/types/hint'
 
-const DAILY_LIMIT = 3
+const DAILY_LIMIT = 99999
 
 /** KST 기준 오늘 자정(UTC) 반환 */
 function utcTodayStartKST(): Date {
@@ -54,12 +54,12 @@ export async function POST(req: Request) {
         .eq('id', user.id)
         .single()
 
-    if (!ctaUser || !['member', 'pro', 'admin'].includes(ctaUser.tier)) {
-        return NextResponse.json(
-            { error: 'member 이상 회원만 힌트보기를 이용할 수 있습니다.' },
-            { status: 403 }
-        )
-    }
+    // if (!ctaUser || !['member', 'pro', 'admin'].includes(ctaUser.tier)) {
+    //     return NextResponse.json(
+    //         { error: 'member 이상 회원만 힌트보기를 이용할 수 있습니다.' },
+    //         { status: 403 }
+    //     )
+    // }
 
     // 3. 요청 파싱 (문제 단위)
     const body = await req.json()
