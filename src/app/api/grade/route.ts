@@ -114,12 +114,14 @@ export async function POST(request: Request) {
         }
 
         // 7-1. 힌트/정답 사용 이력 확인 (채점 통계 제외 여부를 결정)
-        const { count: featureCount } = await adminSupabase
-            .from('cta_feature_log')
-            .select('*', { count: 'exact', head: true })
+        //      문제 단위 학습보조 상태가 존재하면 힌트 또는 정답을 열람한 것.
+        const { data: assist } = await adminSupabase
+            .from('cta_problem_assist')
+            .select('id')
             .eq('user_id', user.id)
             .eq('problem_id', problemId)
-        const hintUsedFlag = (featureCount ?? 0) > 0
+            .maybeSingle()
+        const hintUsedFlag = !!assist
 
         // 7-2. Gemini 채점 호출
         const result = await gradeProblem(

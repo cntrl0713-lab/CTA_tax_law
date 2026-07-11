@@ -1,26 +1,30 @@
-/** 힌트보기 요청 */
+/** 힌트보기 요청 (문제 단위) */
 export interface HintRequest {
     problemId: number
-    subquestionId: number
 }
 
-/** 힌트보기 응답 */
+/** 힌트보기 응답 — 문제 내 모든 물음의 키워드를 물음별로 그룹화 */
 export interface HintResponse {
-    keywords: string[]
+    subquestions: {
+        number: number
+        keywords: string[]
+    }[]
     remainingToday: number
 }
 
-/** 정답보기 요청 */
+/** 정답보기 요청 (문제 단위) */
 export interface AnswerRevealRequest {
     problemId: number
-    subquestionId: number
 }
 
-/** 정답보기 응답 */
+/** 정답보기 응답 — 문제 내 모든 물음의 모범답안을 물음별로 그룹화 */
 export interface AnswerRevealResponse {
-    rubrics: {
-        criterionName: string
-        exampleAnswerText: string | null
+    subquestions: {
+        number: number
+        rubrics: {
+            criterionName: string
+            exampleAnswerText: string | null
+        }[]
     }[]
     remainingToday: number
 }

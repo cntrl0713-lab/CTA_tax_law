@@ -66,14 +66,13 @@ export interface CtaUser {
     updated_at: string
 }
 
-/** 힌트/정답보기 사용 이력 */
-export interface FeatureLog {
+/** 문제 단위 학습보조 상태 (힌트/정답 열람 여부, 문제당 1행) */
+export interface ProblemAssist {
     id: number
     user_id: string
     problem_id: number
-    subquestion_id: number
-    feature_type: 'hint' | 'answer'
-    created_at: string
+    hint_used_at: string | null
+    answer_used_at: string | null
 }
 
 /** 채점 이력 (오답노트 포함) */
