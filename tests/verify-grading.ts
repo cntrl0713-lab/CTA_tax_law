@@ -1,5 +1,6 @@
 /**
- * 채점 로직 검증 스크립트 — 문제 1(재산가치 증가이익의 증여) / 문제 51(세무조사권 남용) / 문제 9(면세전용과 공통매입세액 재계산)
+ * 채점 로직 검증 스크립트 — 문제 1(재산가치 증가이익의 증여) / 문제 9(면세전용과 공통매입세액 재계산) / 문제 46(공장·본사 지방이전 세액특례)
+ * (문제 51은 내용 변경 예정이라 이 스위트에서 제외 — 관련 검증은 tests/test.md 참고)
  *
  * 검증 항목:
  *   (1) 충실한 답안이 높은 점수를 받는지 (strong)
@@ -21,17 +22,12 @@
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts               # 문제1 충실한 답안 (기본)
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --incomplete   # 문제1 관대화 방지 확인
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --half         # 문제1 절반 답안 비례성 확인
- *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51    # 문제51 회귀 확인 (강한 답안)
- *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --incomplete # 문제51 관대화 방지
- *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --half       # 문제51 절반 답안 비례성 확인
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9              # 문제9 강한 답안 (부가가치세법, 신규)
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --incomplete
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --half
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --ambiguous            # 문제1 애매한 표현 답안
- *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --ambiguous
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --ambiguous
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --overgeneralized      # 문제1 일반화된 오답
- *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --overgeneralized
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --overgeneralized
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46             # 문제46 강한 답안 (조세특례제한법, 신규)
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --incomplete
@@ -313,223 +309,6 @@ const AMBIGUOUS_ANSWERS: Record<number, string> = {
         '甲의 이야기처럼 사이에 낀 이익이라 해서 세금을 매길 수 없다고 보기는 어렵다고 생각한다. 이런 제도를 둔 취지가 애초에 세금을 피해가려는 시도를 막으려는 데 있다는 점을 생각하면, 가치가 오른 물건(땅)과 그 사람이 실제로 손에 쥔 것(주식)이 꼭 같은 물건이어야만 하는 것은 아니라고 본다. ' +
         '회사가 가진 자산의 가치가 어떤 사업으로 인해 올라가고, 그 여파로 그 회사 지분을 쥐고 있던 사람도 지분 가치가 오르는 이득을 보게 되었는데, 이 둘 사이에 그럴 만한 뚜렷한 흐름—즉 하나가 다른 하나를 낳았다고 볼 만한 사정—이 있다면, 지분을 쥔 사람이 그렇게 간접적으로 얻은 이득도 세금을 매길 수 있는 범위 안에 들어온다고 봐야 한다. ' +
         '이 사안을 보면, 회사가 갖고 있던 땅이 새 도시를 만드는 구역으로 지정되어 개발이 진행되면서 그 회사 자체의 가치가 올라갔고, 그 때문에 甲이 쥐고 있던 지분의 가치도 크게 뛰었으니, 둘 사이의 흐름이 꽤 뚜렷하게 이어진다고 볼 수 있다. 그러니 물건이 서로 다르다는 형식적인 사정만 가지고 세금을 매길 수 없다고 하는 甲의 말은 받아들이기 어렵다.',
-}
-
-// ── 문제 51 데이터: cta_uploader/add_problem_51.py의 실제 업로드 값과 동일 ──
-const problem51: ProblemWithDetails = {
-    id: 51,
-    subject_id: 1,
-    title: '세무조사권 남용과 한계',
-    total_score: 23,
-    case_text_full:
-        '도매업을 영위하는 개인사업자 甲은 최근 신용카드 지출액이 신고 소득 대비 과다하다는 과세관청의 내부 분석에 따라, 구체적 제보나 자료 없이 단순 의심만으로 수시 세무조사 대상자로 선정되어 조사를 받았다. ' +
-        "조사 진행 중 과세관청은 과거 무혐의로 종결되었던 甲의 2021년 귀속분에 대하여 재조사에 착수하였다. 그 근거는 최근 검찰이 별건 압수수색을 통해 확보하여 과세관청에 통보한 '차명계좌 상세 자금흐름 엑셀 파일'이었다. " +
-        "한편, 과세관청 소속 세무공무원은 甲에 대한 세무조사 과정에서 甲의 주요 거래처인 A법인의 부사장 乙을 '조사대상자의 거래관련인(참고인)' 자격으로 세무서에 출석하도록 요구하였다. " +
-        '세무공무원은 乙을 상대로 단순한 거래사실 확인을 넘어 수입 누락 경위, 자금의 개인적 사용처, 세금 회피 목적 유무 등을 장시간 강도 높게 질문조사하였고, 나아가 乙의 개인 이메일 및 업무 메모까지 확보하여 과세요건을 직접 검토하였다. ' +
-        '과세관청 처분: 관할 세무서장은 재조사 결과를 바탕으로 甲에게 2021년 귀속 종합소득세를 증액 경정·고지하였다. ' +
-        '또한 관할 세무서장은 乙의 부과제척기간 만료일이 임박했다는 이유로 세무조사 사전통지 및 과세예고통지(과세전적부심사 기회) 등 관련 절차를 일체 생략한 채, 乙에게 종합소득세를 전격적으로 증액 경정·고지하였다.',
-    case_text_compact:
-        '개인사업자 甲은 내부분석만으로 수시 세무조사 대상이 되었고, 과거 무혐의 종결된 2021년분은 검찰이 압수수색으로 확보해 통보한 차명계좌 엑셀 파일을 근거로 재조사되었다 ' +
-        '또 거래처 부사장 乙은 참고인 자격으로 출석했지만 실질적으로 강도 높은 조사와 자료확보가 이루어졌고, 사전통지 없이 종합소득세가 정경·고지되었다.',
-    issue_text_full:
-        '관할 세무서장은 재조사 결과를 바탕으로 甲에게 2021년 귀속 종합소득세를 증액 경정·고지하였다.\n' +
-        '또한 관할 세무서장은 乙의 부과제척기간 만료일이 임박했다는 이유로 세무조사 사전통지 및 과세예고통지(과세전적부심사 기회) 등 관련 절차를 일체 생략한 채, 乙에게 종합소득세를 전격적으로 증액 경정·고지하였다.',
-    issue_text_compact:
-        '甲에 대한 재조사 결과로 종합소득세가 경정되었고, 乙에 대해서는 사전통지와 과세예고통지 없이 종합소득세가 경정·고지되었다.',
-    created_at: null,
-    cta_subquestion: [
-        {
-            id: 511,
-            problem_id: 51,
-            number: 1,
-            score: 7,
-            display_order: 1,
-            prompt_text_full:
-                '「국세기본법」상 과세관청이 납세자의 성실성 추정을 배제하고 수시 세무조사를 할 수 있는 법정 사유를 2가지 이상 열거하고, 구체적 자료 없이 단순 의심만으로 수시 세무조사에 착수한 과세관청의 조치에 대한 적법성 여부를 판단하시오.',
-            prompt_text_compact: '성실성 추정 배제 사유와 단순 의심에 의한 수시 세무조사의 적법성을 판단하시오.',
-            cta_subquestion_rubric: [
-                {
-                    id: 5111,
-                    subquestion_id: 511,
-                    criterion_name: '성실성 추정 배제 사유',
-                    max_score: 4,
-                    required: true,
-                    display_order: 1,
-                    description_display:
-                        '다음 중 2가지 이상 기재 시 4점, 1가지만 기재 시 2점: ① 납세협력의무(신고, 세금계산서 발급 등) 이행 누락 ② 무자료·위장·가공거래 등 거래내용이 사실과 다른 혐의 ③ 납세자에 대한 구체적인 탈세제보 ④ 신고내용에 탈루나 오류의 혐의를 인정할 만한 명백한 자료 등',
-                    description_compact: '납세협력의무 누락, 사실과 다른 거래, 탈세제보, 명백한 자료 등',
-                    keywords_json: kw(['납세협력의무', '무자료거래', '탈세제보', '명백한 자료']),
-                    example_answer_text:
-                        '성실성 추정 배제 사유로는 납세협력의무 이행 누락, 무자료·위장·가공거래, 구체적인 탈세제보, 신고내용에 대한 명백한 탈루 자료 등이 있다.',
-                },
-                {
-                    id: 5112,
-                    subquestion_id: 511,
-                    criterion_name: '수시 세무조사의 적법성',
-                    max_score: 3,
-                    required: true,
-                    display_order: 2,
-                    description_display:
-                        "과세관청의 수시 세무조사 착수는 위법하다. 세무공무원은 적정하고 공평한 과세를 위해 '필요한 최소한의 범위'에서 세무조사를 실시해야 하므로, 법령이 정한 구체적이고 객관적인 탈루 혐의 자료 없이 단순한 의심만으로 조사를 개시하는 것은 조사권 남용에 해당한다.",
-                    description_compact: '구체적 자료 없이 단순 의심으로 시작한 수시조사는 조사권 남용으로 위법',
-                    keywords_json: kw(['수시 세무조사', '최소한의 범위', '조사권 남용', '구체적 자료']),
-                    example_answer_text:
-                        '구체적이고 객관적인 탈루 혐의 자료 없이 단순 의심만으로 수시 세무조사를 개시한 것은 조사권 남용으로 위법하다.',
-                },
-            ],
-        },
-        {
-            id: 512,
-            problem_id: 51,
-            number: 2,
-            score: 8,
-            display_order: 2,
-            prompt_text_full:
-                "예외적으로 동일한 과세기간에 대한 중복조사(재조사)가 허용되는 '조세탈루 혐의를 인정할 만한 명백한 자료'의 의미를 대법원 판례의 입장에 따라 설명하고, 위 엑셀 파일이 과거 금융조사로 충분히 확인 가능했던 자료이므로 명백한 자료가 아니라는 甲 주장의 타당성(재조사의 적법성)을 논리적으로 논하시오.",
-            prompt_text_compact: '명백한 자료의 의미와 엑셀 파일에 근거한 재조사의 적법성을 판단하시오.',
-            cta_subquestion_rubric: [
-                {
-                    id: 5121,
-                    subquestion_id: 512,
-                    criterion_name: '명백한 자료의 의미',
-                    max_score: 4,
-                    required: true,
-                    display_order: 1,
-                    description_display:
-                        '예외적으로 재조사가 허용되는 명백한 자료란 조세탈루 사실에 대한 개연성이 객관성과 합리성 있는 자료에 의해 상당한 정도로 인정되어야 하며, 종전 세무조사에서 이미 조사된 자료가 아닌 외부에서 별도로 확보된 신규성(비중복성)을 갖춘 자료여야 한다.',
-                    description_compact: '객관적·합리적 개연성을 갖춘 신규 자료만 명백한 자료',
-                    keywords_json: kw(['조세탈루', '객관성', '합리성', '신규성', '비중복성']),
-                    example_answer_text:
-                        '명백한 자료란 조세탈루 개연성이 객관성과 합리성이 있는 자료로 상당히 인정되고, 종전 조사자료와 중복되지 않는 신규 자료여야 한다.',
-                },
-                {
-                    id: 5122,
-                    subquestion_id: 512,
-                    criterion_name: '재조사의 적법성',
-                    max_score: 4,
-                    required: true,
-                    display_order: 2,
-                    description_display:
-                        '甲 주장은 타당하지 않다. 해당 엑셀 파일은 검찰 압수수색이라는 별도 절차로 비로소 확보된 신규성 있는 자료이며, 구체적인 자금흐름이 상세히 기록되어 객관성과 합리성을 갖추었으므로 재조사가 허용되는 명백한 자료에 해당한다.',
-                    description_compact: '압수수색으로 확보된 신규·구체 자료이므로 재조사 적법',
-                    keywords_json: kw(['압수수색', '차명계좌', '신규성', '구체적 자금흐름']),
-                    example_answer_text:
-                        '검찰 압수수색으로 확보된 차명계좌 엑셀 파일은 신규성 있는 구체적 자료이므로, 재조사를 허용하는 명백한 자료에 해당한다.',
-                },
-            ],
-        },
-        {
-            id: 513,
-            problem_id: 51,
-            number: 3,
-            score: 8,
-            display_order: 3,
-            prompt_text_full:
-                "거래상대방인 乙에 대한 강도 높은 질문조사가 「국세기본법」에 따른 별도의 '세무조사'에 해당하는지에 대한 대법원 판례의 판단 기준을 설명하고, 세무조사 사전통지 및 과세예고통지 등 절차를 생략한 채 乙에게 종합소득세를 부과한 처분이 적법한지 논리적 근거를 들어 서술하시오.",
-            prompt_text_compact: '거래상대방 질문조사가 별도 세무조사인지와 절차 생략 처분의 적법성을 서술하시오.',
-            cta_subquestion_rubric: [
-                {
-                    id: 5131,
-                    subquestion_id: 513,
-                    criterion_name: '별도 세무조사 판단 기준',
-                    max_score: 4,
-                    required: true,
-                    display_order: 1,
-                    description_display:
-                        "대법원은 거래상대방 질문조사 과정에서 거래상대방에게 과세요건 사실에 대한 진술을 강요하여 '영업의 자유나 사생활의 자유가 침해될 염려'가 있는 경우에는, 단순한 참고인 조사를 넘어선 거래상대방에 대한 별도의 세무조사에 해당한다고 본다.",
-                    description_compact: '과세요건 진술 강요로 영업·사생활 자유 침해 우려가 있으면 별도 세무조사',
-                    keywords_json: kw(['거래상대방', '과세요건 사실', '영업의 자유', '사생활의 자유']),
-                    example_answer_text:
-                        '거래상대방에게 과세요건 사실에 대한 진술을 강요해 영업의 자유나 사생활의 자유가 침해될 염려가 있으면 별도의 세무조사에 해당한다.',
-                },
-                {
-                    id: 5132,
-                    subquestion_id: 513,
-                    criterion_name: '처분의 적법성',
-                    max_score: 4,
-                    required: true,
-                    display_order: 2,
-                    description_display:
-                        '과세관청의 처분은 위법하다. 乙에 대한 조사는 실질적인 별도의 세무조사에 해당함에도 과세관청이 사전통지나 과세예고통지 등의 절차를 누락하여 납세자의 절차적 권리를 중대하게 침해하였으므로 처분은 위법하다.',
-                    description_compact: '실질적 세무조사인데 사전통지·과세예고통지 누락으로 처분 위법',
-                    keywords_json: kw(['사전통지', '과세예고통지', '절차적 권리', '처분 위법']),
-                    example_answer_text:
-                        '乙에 대한 조사는 실질적인 세무조사에 해당하는데도 사전통지와 과세예고통지를 생략했으므로 과세처분은 위법하다.',
-                },
-            ],
-        },
-    ],
-}
-
-const STRONG_ANSWERS_51: Record<number, string> = {
-    1:
-        '성실성 추정 배제 사유로는 납세협력의무 이행 누락, 무자료·위장·가공거래 혐의, 구체적인 탈세제보, 신고내용에 탈루나 오류를 인정할 만한 명백한 자료가 있는 경우 등이 있다. ' +
-        '이 사건에서 신용카드 지출액 과다라는 단순 의심만으로는 위 법정 사유 중 어느 것에도 해당하지 않으므로, 구체적 자료 없이 착수한 수시 세무조사는 조사권 남용으로서 위법하다.',
-    2:
-        '명백한 자료란 조세탈루 사실에 대한 개연성이 객관성과 합리성 있는 자료에 의해 상당한 정도로 인정되고, 종전 세무조사에서 이미 조사된 자료와 중복되지 않는 신규성을 갖춘 자료를 의미한다. ' +
-        '이 사건 엑셀 파일은 검찰의 압수수색이라는 별도 절차를 통해 비로소 확보된 신규 자료이고 구체적 자금흐름이 상세히 기록되어 객관성과 합리성을 갖추었으므로 명백한 자료에 해당한다. 따라서 甲의 주장은 타당하지 않고 재조사는 적법하다.',
-    // 버그 리포트의 수험생 답안 원문 그대로 ("과세예고통지"가 명시적으로 포함됨)
-    3:
-        '거래상대방에 대한 질문조사가 과세요건 사실에 관한 진술을 강요하여 거래상대방의 영업의 자유나 사생활의 자유를 침해할 염려가 있는 경우에는 단순한 참고인 조사를 넘어 거래상대방에 대한 별도의 세무조사에 해당한다. ' +
-        '이 사건에서 乙에 대한 조사는 실질적으로 별도 세무조사인데도 사전통지와 과세예고통지 절차를 생략했으므로, 乙에 대한 종합소득세 경정·고지처분은 위법하다.',
-}
-
-const INCOMPLETE_ANSWERS_51: Record<number, string> = {
-    1: '신용카드 지출이 많으면 세무조사를 할 수 있다고 생각한다.',
-    2: '엑셀 파일은 증거로 사용할 수 있으므로 재조사는 문제없다고 본다.',
-    3: '乙은 참고인 자격으로 조사를 받은 것이므로 별도의 세무조사라고 보기 어렵다. 다만 과세관청이 사전통지를 하지 않은 점은 다소 아쉬운 부분이다.',
-}
-
-// ── 일반화된 오답: 자신감 있는 어조로 일반 원칙을 내세우되 구체적 요건·예외를 무시하거나
-//    뒤집어서 결론이 틀린 답안
-const OVERGENERALIZED_ANSWERS_51: Record<number, string> = {
-    1:
-        '과세관청은 국가의 과세권을 실현하는 기관으로서 납세자의 신고 성실성 여부를 폭넓은 재량으로 판단할 수 있고, 세원 관리 차원에서 의심스러운 정황이 있으면 언제든 조사에 착수할 수 있다고 본다. 신용카드 지출이 신고 소득에 비해 과다하다는 것도 충분히 합리적인 의심 사유가 되므로, 이 사건 수시조사는 적법하다.',
-    2:
-        '한 번 종결된 세무조사는 납세자의 법적 안정성을 위해 예외 없이 재조사가 금지되어야 한다는 것이 조세법의 대원칙이다. 따라서 이 사건처럼 이미 무혐의로 종결된 조사를 그 사유를 불문하고 다시 여는 것은 위법하므로, 甲의 주장이 타당하고 재조사는 위법하다.',
-    3:
-        '세무조사는 조사대상자 본인에 대해서만 진행되는 것이 원칙이므로, 乙처럼 참고인 자격으로 출석한 거래상대방에 대해서는 아무리 강도 높게 캐묻더라도 이는 어디까지나 참고인 조사의 범위에 속할 뿐 별도의 세무조사가 될 수 없다고 본다. 따라서 사전통지나 과세예고통지 없이 이루어진 이 사건 처분은 적법하다.',
-}
-
-// ── 절반 답안: 물음마다 한 루브릭만 충족하는 내용을 쓰고 나머지는 완전히 생략
-//    (문제 1과 달리 물음당 루브릭이 2개뿐이므로, "앞쪽"/"뒤쪽" 커버 위치를 번갈아 검증)
-const HALF_ANSWERS_51: Record<number, string> = {
-    // 물음 1(7점): "성실성 추정 배제 사유"(열거, 4점)만 서술, "수시 세무조사의 적법성"(결론, 3점)은 미언급
-    1: '성실성 추정 배제 사유로는 납세협력의무 이행 누락, 무자료·위장·가공거래 혐의, 구체적인 탈세제보, 신고내용에 탈루나 오류를 인정할 만한 명백한 자료가 있는 경우 등이 있다.',
-    // 물음 2(8점): "재조사의 적법성"(결론·포섭, 4점)만 서술, "명백한 자료의 의미"(정의, 4점)는 미언급
-    2: '이 사건 엑셀 파일은 검찰의 압수수색이라는 별도 절차를 통해 비로소 확보된 자료이고 구체적인 자금흐름이 상세히 기록되어 있으므로, 甲의 주장은 타당하지 않고 재조사는 적법하다.',
-    // 물음 3(8점): "별도 세무조사 판단 기준"(법리, 4점)만 서술, "처분의 적법성"(결론, 4점)은 미언급
-    3: '대법원은 거래상대방에 대한 질문조사 과정에서 과세요건 사실에 대한 진술을 강요하여 영업의 자유나 사생활의 자유가 침해될 염려가 있는 경우에는 단순한 참고인 조사를 넘어 거래상대방에 대한 별도의 세무조사에 해당한다고 본다.',
-}
-
-// 절반 답안에서 물음별로 "채운" 루브릭과 "비운" 루브릭
-const HALF_COVERAGE_51: Record<number, { covered: string[]; omitted: string[] }> = {
-    1: {
-        covered: ['성실성 추정 배제 사유'],
-        omitted: ['수시 세무조사의 적법성'],
-    },
-    2: {
-        covered: ['재조사의 적법성'],
-        omitted: ['명백한 자료의 의미'],
-    },
-    3: {
-        covered: ['별도 세무조사 판단 기준'],
-        omitted: ['처분의 적법성'],
-    },
-}
-// 절반 답안 기대 총점: 4 + 4 + 4 = 12 / 23 (약 52%)
-
-// ── 애매한 표현 답안: STRONG_ANSWERS_51과 논리·내용은 동일하지만 완곡하게 풀어 씀
-const AMBIGUOUS_ANSWERS_51: Record<number, string> = {
-    1:
-        '성실하게 신고했다고 보는 전제를 깨고 조사에 들어갈 수 있는 경우로는, 세금 관련해서 마땅히 지켜야 할 의무를 안 지킨 정황이 있다거나, 거래 자체가 실제와 다르게—증빙 없이 이뤄졌거나 거짓으로 꾸며졌거나 하는 식으로—이루어졌다는 낌새가 있다거나, 누군가 구체적으로 탈세를 신고해온 경우, 혹은 신고한 내용에 뭔가 빠뜨리거나 잘못된 부분이 있다는 게 뚜렷이 드러나는 자료가 있는 경우 등을 들 수 있다. ' +
-        '그런데 이 사안에서는 그저 카드 쓴 돈이 신고한 소득에 비해 많아 보인다는 정도의 막연한 느낌만으로 조사가 시작되었을 뿐, 앞서 말한 어느 경우에도 뚜렷이 들어맞지 않는다. 그렇다면 별다른 근거 자료 없이 그런 느낌만으로 조사에 나선 것은 조사 권한을 과하게 쓴 것이어서 문제가 있다고 본다.',
-    2:
-        "같은 시기를 다시 들여다볼 수 있게 해주는 '뚜렷한 자료'라는 게 뭘 말하는지는, 세금을 축내려 한 사정이 있다는 게 그럴듯하고 믿을 만한 근거로 어느 정도 이상 드러나야 하고, 예전 조사 때 이미 봤던 것과 겹치지 않는 새로 나온 것이어야 한다는 뜻으로 이해된다. " +
-        "이 사건의 엑셀 자료는 검찰이 별도로 진행한 압수수색을 통해서야 비로소 세상에 나온 것이고, 돈이 오간 내역이 구체적으로 다 적혀 있어 그럴듯하고 믿을 만하다고 볼 수 있으니, 앞서 말한 '뚜렷한 자료'에 들어맞는다고 본다. 그러니 甲의 주장은 받아들이기 어렵고, 다시 들여다본 것 자체는 문제없다고 본다.",
-    3:
-        '거래하던 상대방을 상대로 이것저것 캐묻는 과정에서, 세금이 매겨지는 근거가 되는 사실 자체를 사실상 털어놓게 만들어서 그 사람이 장사하거나 사생활을 지킬 자유가 흔들릴 수 있는 지경까지 가면, 단순히 옆에서 이야기를 들어보는 수준을 넘어 그 사람 본인에 대한 별개의 조사나 마찬가지라고 보는 게 법원 입장인 것 같다. ' +
-        '이 사건에서 乙을 상대로 한 조사는 사실상 그런 별개의 조사에 해당하는데도, 미리 알리는 절차나 과세 예정 사실을 미리 알려주는 절차를 거치지 않았으니, 乙에게 매겨진 종합소득세 처분은 절차상 문제가 있다고 본다.',
 }
 
 // ── 문제 9 데이터: cta_uploader/data/problem_9.json + upload_cta.py 변환 로직과 동일
@@ -991,17 +770,6 @@ const PROBLEM1_FIXTURE: ProblemFixture = {
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS,
 }
 
-const PROBLEM51_FIXTURE: ProblemFixture = {
-    problem: problem51,
-    label: '문제 51(세무조사권 남용)',
-    strongAnswers: STRONG_ANSWERS_51,
-    incompleteAnswers: INCOMPLETE_ANSWERS_51,
-    halfAnswers: HALF_ANSWERS_51,
-    halfCoverage: HALF_COVERAGE_51,
-    ambiguousAnswers: AMBIGUOUS_ANSWERS_51,
-    overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_51,
-}
-
 const PROBLEM9_FIXTURE: ProblemFixture = {
     problem: problem9,
     label: '문제 9(면세전용과 공통매입세액 재계산)',
@@ -1048,6 +816,11 @@ function normalize(text: string): string {
     return text.normalize('NFC').replace(/[\s·.,'"“”‘’()[\]「」『』〈〉《》:;!?~\-]/g, '')
 }
 
+// gradeProblem.ts의 stripListMarkers와 동일 (독립 재구현): 줄 앞 번호 매기기 기호(1. / (1) / ① / 가. 등) 제거
+function stripListMarkers(text: string): string {
+    return text.replace(/^[ \t]*(?:\(\d{1,3}\)|\d{1,3}[.)]|[①-⑳]|[가나다라마바사아자차카타파하][.)])[ \t]*/gm, '')
+}
+
 // 피드백에서 "'X' 누락 / X 언급이 없 / X이 없" 류 주장을 추출해, 해당 답안에 X가 실제로 존재하면 허위 누락으로 판정
 function findFalseOmissions(feedback: string, answerText: string): string[] {
     const normAnswer = normalize(answerText)
@@ -1066,13 +839,11 @@ function findFalseOmissions(feedback: string, answerText: string): string[] {
 }
 
 async function main() {
-    const fixture = process.argv.includes('--problem51')
-        ? PROBLEM51_FIXTURE
-        : process.argv.includes('--problem9')
-            ? PROBLEM9_FIXTURE
-            : process.argv.includes('--problem46')
-                ? PROBLEM46_FIXTURE
-                : PROBLEM1_FIXTURE
+    const fixture = process.argv.includes('--problem9')
+        ? PROBLEM9_FIXTURE
+        : process.argv.includes('--problem46')
+            ? PROBLEM46_FIXTURE
+            : PROBLEM1_FIXTURE
     const mode: Mode = process.argv.includes('--half')
         ? 'half'
         : process.argv.includes('--incomplete')
@@ -1148,15 +919,24 @@ async function main() {
 
     // [공통, 모든 모드] 버그 1: 유령 근거(무근거 만점) — gradeProblem.ts 내부 함수를 가져다 쓰지 않고 독립 재구현
     for (const sq of result.subquestions) {
-        const normAns = normalize(answerByNum.get(sq.number) || '')
+        const normAns = normalize(stripListMarkers(answerByNum.get(sq.number) || ''))
         for (const rr of sq.rubricResults) {
             const status = (rr as unknown as { status?: string }).status
             const credited = status !== 'unmet' && rr.awardedScore > 0
             if (!credited) continue
-            const quote = normalize(((rr as unknown as { evidenceQuote?: string }).evidenceQuote || '').trim())
+            const rawQuote = ((rr as unknown as { evidenceQuote?: string }).evidenceQuote || '').trim()
+            // gradeProblem.ts의 isEvidenceQuoteVerified와 동일하게, 줄바꿈으로 이어붙인 서로 떨어진
+            // 인용도 각 조각이 답안에 실존하기만 하면 정당한 근거로 인정한다 (문제51 물음1 실측:
+            // 오답 항목이 두 정답 항목 사이에 끼어 있어 모델이 그 항목만 건너뛰고 이어붙여 인용함).
+            // 번호 매기기 기호도 답안·인용문 양쪽에서 구조적 표지로 보고 제거 후 비교한다 (문제1
+            // 물음1 실측: 모델이 서로 다른 줄의 내용을 번호 없이 하나의 문장으로 이어붙여 인용함)
+            const segments = stripListMarkers(rawQuote)
+                .split(/\n+/)
+                .map((s) => normalize(s.trim()))
+                .filter((s) => s.length > 0)
             checks.push({
                 name: `물음 ${sq.number} "${rr.criterionName}" 근거 인용이 답안에 실존함`,
-                pass: quote.length > 0 && normAns.includes(quote),
+                pass: segments.length > 0 && segments.every((seg) => normAns.includes(seg)),
             })
         }
     }

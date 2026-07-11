@@ -45,6 +45,18 @@ function normalizeForEvidenceMatch(text: string): string {
     return text.normalize('NFC').replace(/[\s·.,'"“”‘’()[\]「」『』〈〉《》:;!?~-]/g, '')
 }
 
+/**
+ * 줄 앞의 번호 매기기 기호(1. / (1) / ① / 가. 등)를 구조적 표지로 보고 제거합니다. 모델이
+ * 답안의 서로 다른 줄에 걸친 내용을 하나의 문장으로 이어붙여 인용할 때 이 번호를 흔히 함께
+ * 지워버리는데(실측: 답안 "1. …일것\n2. 특수관계인…"을 "…일것 특수관계인…"으로 번호 없이
+ * 이어붙여 인용), 답안 쪽에는 번호가 그대로 남아 있어 연속 문자열 대조가 그 지점에서만
+ * 어긋나 정당한 근거가 유령 근거로 오판되는 문제를 막기 위함입니다. 문장 중간의 숫자(금액·연도
+ * 등 실제 내용)는 건드리지 않도록 줄 시작 위치의 기호만 제거합니다.
+ */
+function stripListMarkers(text: string): string {
+    return text.replace(/^[ \t]*(?:\(\d{1,3}\)|\d{1,3}[.)]|[①-⑳]|[가나다라마바사아자차카타파하][.)])[ \t]*/gm, '')
+}
+
 // 모델이 부분 점수를 소수(예: 0.4)로 반환하는 경우, JS 부동소수점 덧셈 누적 오차로
 // 총점이 1.2000000000000002 같은 값이 되어 화면에 그대로 노출될 수 있어 합산 때마다 보정한다.
 function round2(n: number): number {
@@ -130,6 +142,22 @@ interface Contradiction {
 }
 
 /**
+ * evidenceQuote를 줄바꿈 단위로 나눠, 답안 안에서 서로 떨어진 여러 문장을 이어붙여 인용한
+ * 경우에도 각 조각이 개별적으로 답안에 실존하기만 하면 정당한 근거로 인정합니다. (실측: 답안이
+ * "정답 항목 - 오답 항목 - 정답 항목" 순으로 나열된 경우, 모델이 오답 항목만 건너뛰고 두 정답
+ * 문장을 줄바꿈으로 이어붙여 인용 — 답안에 실제로 있는 내용인데도 "연속된 하나의 문자열"로는
+ * 답안에 없으므로 유령 근거로 오판되어 정당한 점수까지 강제로 0점 처리되는 사례를 확인함)
+ * 조각 단위로 나누어도 각 조각이 실제로 존재해야 하므로 할루시네이션 방지 효과는 그대로 유지됩니다.
+ */
+function isEvidenceQuoteVerified(quote: string, normalizedAnswer: string): boolean {
+    const segments = stripListMarkers(quote)
+        .split(/\n+/)
+        .map((s) => normalizeForEvidenceMatch(s.trim()))
+        .filter((s) => s.length > 0)
+    return segments.length > 0 && segments.every((seg) => normalizedAnswer.includes(seg))
+}
+
+/**
  * "충족(met/partially_met) + 0점 초과"로 판정했음에도 근거 인용이 없거나, 답안에 실제로
  * 존재하지 않거나, 근거로서 무의미(조사 한 개 등 지나치게 짧음)한 루브릭 결과를 찾습니다.
  * 완결성(요건을 "완전히" 충족했는지)은 판단하지 않고 "인용문이 답안에 실존하는가"만 확인합니다.
@@ -141,7 +169,7 @@ function findPhantomEvidence(result: ParsedGradeResult, answers: SubquestionAnsw
     const contradictions: Contradiction[] = []
 
     for (const sq of result.subquestions) {
-        const normalizedAnswer = normalizeForEvidenceMatch(answerByNumber.get(sq.number) ?? '')
+        const normalizedAnswer = normalizeForEvidenceMatch(stripListMarkers(answerByNumber.get(sq.number) ?? ''))
 
         for (const rr of sq.rubricResults) {
             const credited = rr.status !== 'unmet' && rr.awardedScore > 0
@@ -158,7 +186,7 @@ function findPhantomEvidence(result: ParsedGradeResult, answers: SubquestionAnsw
                 continue
             }
 
-            const normalizedQuote = normalizeForEvidenceMatch(quote)
+            const normalizedQuote = normalizeForEvidenceMatch(stripListMarkers(quote))
             const tooShort = normalizedQuote.length < MIN_EVIDENCE_QUOTE_LENGTH
 
             if (tooShort) {
@@ -171,7 +199,7 @@ function findPhantomEvidence(result: ParsedGradeResult, answers: SubquestionAnsw
                 continue
             }
 
-            if (!normalizedAnswer.includes(normalizedQuote)) {
+            if (!isEvidenceQuoteVerified(quote, normalizedAnswer)) {
                 contradictions.push({
                     subquestionNumber: sq.number,
                     criterionName: rr.criterionName,
@@ -196,7 +224,7 @@ function findSuppressedEvidence(result: ParsedGradeResult, answers: SubquestionA
     const contradictions: Contradiction[] = []
 
     for (const sq of result.subquestions) {
-        const normalizedAnswer = normalizeForEvidenceMatch(answerByNumber.get(sq.number) ?? '')
+        const normalizedAnswer = normalizeForEvidenceMatch(stripListMarkers(answerByNumber.get(sq.number) ?? ''))
 
         for (const rr of sq.rubricResults) {
             if (rr.status !== 'unmet') continue // met/partially_met은 findPhantomEvidence가 담당
@@ -204,10 +232,10 @@ function findSuppressedEvidence(result: ParsedGradeResult, answers: SubquestionA
             const quote = (rr.evidenceQuote || '').trim()
             if (quote.length === 0) continue // 정상: 근거 없음 + unmet
 
-            const normalizedQuote = normalizeForEvidenceMatch(quote)
+            const normalizedQuote = normalizeForEvidenceMatch(stripListMarkers(quote))
             if (normalizedQuote.length < MIN_EVIDENCE_QUOTE_LENGTH) continue // 너무 짧아 신뢰 어려움
 
-            if (normalizedAnswer.includes(normalizedQuote)) {
+            if (isEvidenceQuoteVerified(quote, normalizedAnswer)) {
                 contradictions.push({
                     subquestionNumber: sq.number,
                     criterionName: rr.criterionName,
