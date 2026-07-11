@@ -88,7 +88,7 @@ function normalizeScoresAgainstRubrics(
                 )
             }
             const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
-            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 6: "완전히 충족했으면 met").
+            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 7: "완전히 충족했으면 met").
             // partially_met만 [0, maxScore]로 클램프. (실측: 결론을 근거보다 먼저 서술하는 두괄식
             // 답안에서, 근거 인용은 정답과 정확히 일치하는데도 status=met이면서 부분 점수만 주는
             // 사례를 확인 — 서술 순서라는 무관한 요인으로 점수만 깎이고 라벨은 정직하게 유지된 것.
@@ -97,10 +97,10 @@ function normalizeScoresAgainstRubrics(
                 rr.status === 'unmet'
                     ? 0
                     : rr.status === 'met'
-                      ? maxScore
-                      : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
+                        ? maxScore
+                        : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
-            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
+            // 규칙 7의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
             const status = awardedScore === 0 ? 'unmet' : rr.status
             return { ...rr, maxScore, awardedScore, status }
         })
@@ -311,12 +311,7 @@ function applyCorrections(
                 appliedNames.push(rr.criterionName)
                 return { ...rr, evidenceQuote: c.evidenceQuote, status: c.status, awardedScore: c.awardedScore }
             })
-            if (appliedNames.length === 0) return { ...sq, rubricResults }
-            return {
-                ...sq,
-                rubricResults,
-                feedback: `${sq.feedback} [자동 재검토: "${appliedNames.join('", "')}" 근거 재확인 후 교정됨]`,
-            }
+            return { ...sq, rubricResults }
         }),
     }
 }
@@ -349,7 +344,6 @@ function forceZeroOutContradictions(
             if (!names) return sq
             return {
                 ...sq,
-                feedback: `${sq.feedback} [자동 검증: ${names.join(', ')}]`,
                 rubricResults: sq.rubricResults.map((rr) =>
                     flagged.has(`${sq.number}::${rr.criterionName}`)
                         ? { ...rr, awardedScore: 0, status: 'unmet' as const }
@@ -399,14 +393,15 @@ ${answer?.answerText || '(답안 미작성)'}
 2. 각 루브릭 기준별로 배점 내에서 점수를 부여하세요.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 논리 구조를 중심으로 평가하세요.
-5. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
-6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
-7. 설명이 부실하거나 핵심 요건(수치, 법적 절차 요건 등) 중 일부가 누락된 경우 절대로 만점(met)을 주지 말고 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오.
-8. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
-9. 모든 응답은 한국어로 작성하세요.
-10. 각 채점 기준의 evidenceQuote에는 반드시 수험생 답안 원문에 실제로 있는 문장/구절을 그대로(축약·의역 없이) 옮겨 적으세요. 답안에 없는 내용을 근거로 점수를 주지 마세요.
-11. 답안에 해당 기준을 뒷받침하는 문장이 전혀 없다면, 다른 부분이 아무리 훌륭해도 그 기준은 반드시 unmet과 0점으로 처리하고 evidenceQuote는 빈 문자열로 남기세요. 근거를 인용할 수 없는 기준에 점수를 부여하는 것은 심각한 채점 오류입니다.
-12. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.`
+5. 채점 기준은 "문구의 일치"가 아니라 "요건 충족의 실질"입니다. 수험생의 표현·어휘·문장 순서가 채점 기준 설명이나 모범답안 예시와 다르더라도, 법리적으로 같은 의미를 담고 있다면 만점(met)을 주세요. 결론을 근거보다 먼저 쓰는 등 서술 순서가 다르다는 이유만으로, 또는 모범답안과 다른 단어를 썼다는 이유만으로 감점하지 마세요.
+6. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
+7. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
+8. 핵심 요건(수치, 법적 절차 요건 등)의 실질적 내용이 답안에 전혀 담겨 있지 않은 경우에만 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오. 서술이 간결하거나 모범답안과 다른 방식·순서로 쓰였다는 이유만으로 만점을 깎지 마세요 — 표현 방식이 아니라 요건의 실질적 누락 여부로만 판단하세요.
+9. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
+10. 모든 응답은 한국어로 작성하세요.
+11. 각 채점 기준의 evidenceQuote에는 반드시 수험생 답안 원문에 실제로 있는 문장/구절을 그대로(축약·의역 없이) 옮겨 적으세요. 답안에 없는 내용을 근거로 점수를 주지 마세요.
+12. 답안에 해당 기준을 뒷받침하는 문장이 전혀 없다면, 다른 부분이 아무리 훌륭해도 그 기준은 반드시 unmet과 0점으로 처리하고 evidenceQuote는 빈 문자열로 남기세요. 근거를 인용할 수 없는 기준에 점수를 부여하는 것은 심각한 채점 오류입니다. (단, 규칙 5에 따라 표현이 다를 뿐 같은 의미의 문장이 답안에 있다면 이는 "근거가 있는" 경우이지 "근거가 없는" 경우가 아닙니다.)
+13. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.`
 
     const userPrompt = `
 ## 문제 정보

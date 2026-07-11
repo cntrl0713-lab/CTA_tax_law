@@ -33,6 +33,11 @@
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --overgeneralized      # 문제1 일반화된 오답
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem51 --overgeneralized
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --overgeneralized
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46             # 문제46 강한 답안 (조세특례제한법, 신규)
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --incomplete
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --half
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --ambiguous
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --overgeneralized
  */
 import { gradeProblem } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
@@ -740,6 +745,230 @@ const AMBIGUOUS_ANSWERS_9: Record<number, string> = {
         '그리고 이렇게 다시 계산하는 건 중간에 미리 하는 신고 때는 하지 않고, 그 기간이 다 끝난 뒤 최종적으로 정리하는 신고 때 가서야 하게 된다. 다만 그 자산을 이미 남에게 넘겨버렸다든지 하는 식으로 사실상 다른 형태로 처리된 경우이거나, 자산 자체가 없어지거나 버려진 경우에는 이런 재계산을 굳이 하지 않는다고 본다.',
 }
 
+// ── 문제 46 데이터: cta_uploader/data/problem_46.json과 동일
+//    (case_text_full/compact는 원본 배열을 " "로 join한 값이 실제 DB 저장값, upload_cta.py 참고) ──
+const problem46: ProblemWithDetails = {
+    id: 46,
+    subject_id: 8,
+    title: '공장·본사 지방이전 세액특례',
+    total_score: 25,
+    case_text_full:
+        '제조업을 영위하는 내국법인 (주)새롬(조세특례제한법상 중소기업)은 경영 효율화를 위해 2026년 중 두 가지 이전 프로젝트를 진행하였다. ' +
+        '[프로젝트 A: 공장 이전] (주)새롬은 2013년부터 계속하여 수도권과밀억제권역 밖의 지역인 충청북도 청주시에서 공장시설을 갖추고 사업을 영위해왔다. 2025년 4월, 다른 수도권과밀억제권역 밖의 지역인 전라남도 목포시에 신규 공장을 준공하여 이전하였으며, 이후 기존 청주 공장을 2026년 2월에 매각하여 양도차익이 발생하였다. ' +
+        '[프로젝트 B: 본사 이전] (주)새롬은 설립 시부터 10년 이상 경기도 안양시(수도권과밀억제권역)에 본사를 두고 있었으나, 2026년 7월 본사 전체를 충청북도 소재 산업단지로 이전 완료하였다. 이전 전후 영위 업종은 제조업으로 동일하며, 본사 이전과 관련하여 해당 산업단지에 20억 원을 투자하였고, 전체 임직원 60명 중 40명이 이전 본사에서 근무하게 되었다.',
+    case_text_compact:
+        '(주)새롬이 수도권 밖에서 수도권 밖으로 공장을 이전하고 구 공장을 매각한 상황과, 수도권 안의 본사를 수도권 밖 산업단지로 이전하며 20억 원 투자 및 40명의 인원을 배치한 상황.',
+    issue_text_full:
+        '관할 세무서장은 [프로젝트 A]의 공장 양도차익에 대하여 과세이연 특례 적용을 부인하고 (주)새롬에게 법인세를 증액 경정·고지하였다.\n' +
+        '[프로젝트 B]와 관련하여 (주)새롬은 법인 본사 지방이전에 따른 세액감면을 적용하여 법인세를 신고하였다.',
+    issue_text_compact:
+        '수도권 밖에서 밖으로 공장을 이전한 경우 과세특례 대상 여부 및 본사 지방이전에 따른 세액감면 요건·효과 산정의 적법성.',
+    created_at: null,
+    cta_subquestion: [
+        {
+            id: 461,
+            problem_id: 46,
+            number: 1,
+            score: 10,
+            display_order: 1,
+            prompt_text_full:
+                "「조세특례제한법」상 '중소기업의 공장이전에 대한 과세특례'를 적용받기 위한 요건(영위 기간, 이전 지역, 선이전 후양도 기한)을 서술하고, 위 <사실관계>의 [프로젝트 A]에 대한 과세관청 처분의 적법성을 논리적으로 판단하시오.",
+            prompt_text_compact: '공장이전 과세특례 요건 및 과세관청 처분의 적법성 판단.',
+            cta_subquestion_rubric: [
+                {
+                    id: 4611,
+                    subquestion_id: 461,
+                    criterion_name: '공장이전 과세특례 요건',
+                    max_score: 6,
+                    required: true,
+                    display_order: 1,
+                    description_display:
+                        "중소기업이 2년 이상 공장시설을 갖추고 사업을 영위하다가 수도권과밀억제권역 밖으로 공장을 이전할 것과, 신규공장 취득(사업 개시) 후 2년 이내에 기존공장을 양도하는 '선이전 후양도' 요건을 서술할 것.",
+                    description_compact: '2년 이상 영위, 수도권 밖 이전, 2년 내 양도 요건',
+                    keywords_json: kw(['2년 이상', '수도권과밀억제권역 밖', '신규공장 취득', '2년 이내', '기존공장 양도']),
+                    example_answer_text:
+                        '중소기업의 공장이전에 대한 과세특례를 적용받기 위해서는 2년 이상 공장을 운영한 중소기업이 수도권과밀억제권역 밖으로 공장을 이전하여야 하며, 선이전 후양도 기준에 따라 신규 공장을 취득하여 사업을 개시한 후 2년 이내에 기존 공장을 양도하여야 합니다.',
+                },
+                {
+                    id: 4612,
+                    subquestion_id: 461,
+                    criterion_name: '과세관청 처분의 적법성 및 근거',
+                    max_score: 4,
+                    required: true,
+                    display_order: 2,
+                    description_display:
+                        "과세관청의 처분은 위법하다는 결론(1점)과, 조세법률주의 원칙상 법문대로 엄격해석해야 하므로 '기존 공장이 수도권 안에 있어야 한다'는 요건을 함부로 축소·유추해석하여 특례를 부인하는 것은 위법하다는 근거(3점)를 서술할 것.",
+                    description_compact: '처분은 위법하며 조세법률주의상 엄격해석(축소해석 금지)해야 함',
+                    keywords_json: kw(['위법하다', '조세법률주의', '엄격해석', '축소해석', '수도권 밖']),
+                    example_answer_text:
+                        "과세관청이 특례를 부인한 처분은 위법합니다. 조세법률주의 원칙에 따라 과세 요건 및 조세감면 요건은 법문대로 엄격하게 해석하여야 하므로, 법령에 명시되지 않은 '기존 공장이 수도권과밀억제권역 안에 소재할 것'이라는 요건을 자의적으로 추가하여 축소 해석하는 것은 허용되지 않습니다.",
+                },
+            ],
+        },
+        {
+            id: 462,
+            problem_id: 46,
+            number: 2,
+            score: 8,
+            display_order: 2,
+            prompt_text_full:
+                "「조세특례제한법」상 '법인 본사 지방이전에 따른 세액감면(제63조의2)'을 적용받기 위한 요건 중 ① 기존 본사 요건, ② 업종 요건, ③ 투자 및 근무인원 요건을 각각 서술하시오.",
+            prompt_text_compact: '본사 지방이전 세액감면의 기존 본사, 업종, 투자 및 근무인원 요건.',
+            cta_subquestion_rubric: [
+                {
+                    id: 4621,
+                    subquestion_id: 462,
+                    criterion_name: '기존 본사 요건',
+                    max_score: 3,
+                    required: true,
+                    display_order: 1,
+                    description_display: '수도권과밀억제권역에 3년 이상 계속하여 본사를 둔 법인이어야 한다는 점을 명시할 것.',
+                    description_compact: '수도권과밀억제권역에 3년 이상 본사를 둔 법인',
+                    keywords_json: kw(['수도권과밀억제권역', '3년 이상', '본사']),
+                    example_answer_text:
+                        '감면을 받기 위한 기존 본사 요건은 수도권과밀억제권역에 3년 이상 계속하여 본사 또는 주사무소를 둔 법인이어야 합니다.',
+                },
+                {
+                    id: 4622,
+                    subquestion_id: 462,
+                    criterion_name: '업종 요건',
+                    max_score: 2,
+                    required: true,
+                    display_order: 2,
+                    description_display: '부동산업, 건설업, 소비성서비스업 등 일정한 제외 업종에 해당하지 아니할 것을 명시할 것.',
+                    description_compact: '부동산업, 건설업 등 제외 업종에 해당하지 않을 것',
+                    keywords_json: kw(['부동산업', '건설업', '소비성서비스업', '제외 업종']),
+                    example_answer_text:
+                        '업종 요건으로는 부동산업, 건설업, 소비성서비스업 등 세법에서 규정한 특례 제외 업종에 해당하지 않아야 합니다.',
+                },
+                {
+                    id: 4623,
+                    subquestion_id: 462,
+                    criterion_name: '투자 및 근무인원 요건',
+                    max_score: 3,
+                    required: true,
+                    display_order: 3,
+                    description_display: '이전 본사에 10억 원 이상을 투자하고, 20명 이상의 근무인원 요건을 충족해야 함을 명시할 것.',
+                    description_compact: '10억 원 이상 투자 및 20명 이상 근무인원 요건',
+                    keywords_json: kw(['10억 원 이상', '투자', '20명 이상', '근무인원']),
+                    example_answer_text:
+                        '본사 이전과 관련하여 해당 지방에 10억 원 이상을 투자해야 하며, 이전 본사에서 근무하는 인원이 20명 이상이어야 하는 요건을 충족해야 합니다.',
+                },
+            ],
+        },
+        {
+            id: 463,
+            problem_id: 46,
+            number: 3,
+            score: 7,
+            display_order: 3,
+            prompt_text_full:
+                "위 <사실관계>의 [프로젝트 B]에 따라 (주)새롬이 적용받게 될 법인세 감면기간 및 기간별 감면비율을 서술하고, 전체 법인 소득 중 감면이 적용되는 '감면대상 소득비율 산출 방식(산출된 결과값 비율 포함)'을 제시하시오.",
+            prompt_text_compact: '본사 이전 감면기간·비율 및 감면대상 소득비율 산출 방식과 결과값.',
+            cta_subquestion_rubric: [
+                {
+                    id: 4631,
+                    subquestion_id: 463,
+                    criterion_name: '감면기간 및 감면비율',
+                    max_score: 4,
+                    required: true,
+                    display_order: 1,
+                    description_display:
+                        '최초로 소득이 발생한 과세연도부터 5년간 법인세의 100%를 감면하고, 그 다음 3년간 50%를 감면한다는 내용을 정확히 서술할 것.',
+                    description_compact: '최초 소득 발생 연도부터 5년 100%, 3년 50% 감면',
+                    keywords_json: kw(['최초로 소득이 발생한', '5년간', '100%', '3년간', '50%']),
+                    example_answer_text:
+                        '본사 지방이전에 따른 법인세 감면은 이전 후 최초로 소득이 발생한 과세연도와 그 후 4년(총 5년간) 법인세의 100%를 감면하고, 그 다음 3년 이내에 끝나는 과세연도에는 법인세의 50%를 감면받게 됩니다.',
+                },
+                {
+                    id: 4632,
+                    subquestion_id: 463,
+                    criterion_name: '감면대상 소득비율 산출',
+                    max_score: 3,
+                    required: true,
+                    display_order: 2,
+                    description_display:
+                        '이전본사 근무인원 수를 전체 근무인원 수로 나눈 비율로 산정하며, 사안의 경우 40/60 = 66.6%(또는 2/3)임을 제시할 것.',
+                    description_compact: '이전본사 근무인원 / 전체 근무인원으로 산정하며 사안은 66.6%임',
+                    keywords_json: kw(['이전본사 근무인원', '전체 근무인원', '비율', '66.6%', '2/3']),
+                    example_answer_text:
+                        '감면이 적용되는 감면대상 소득비율은 이전본사 근무인원 수를 법인 전체 근무인원 수로 나눈 비율로 산출합니다. 위 <사례>의 경우 40명 / 60명이므로 감면대상 소득비율은 약 66.6%(또는 2/3)가 됩니다.',
+                },
+            ],
+        },
+    ],
+}
+
+const STRONG_ANSWERS_46: Record<number, string> = {
+    1:
+        '중소기업의 공장이전에 대한 과세특례를 적용받기 위해서는, 2년 이상 계속하여 공장시설을 갖추고 사업을 영위한 중소기업이 수도권과밀억제권역 밖의 지역으로 공장을 이전하여야 하고, 선이전 후양도 기준에 따라 신규 공장을 취득하여 사업을 개시한 날로부터 2년 이내에 기존 공장을 양도하여야 한다. ' +
+        '사안의 경우 (주)새롬은 2013년부터 계속하여 수도권과밀억제권역 밖인 청주시에서 2년 이상 공장을 운영해왔고, 2025년 4월 역시 수도권과밀억제권역 밖인 목포시로 신규 공장을 준공·이전한 후 2026년 2월에 기존 청주 공장을 양도하였으므로 위 요건을 형식적으로 충족한다. ' +
+        '그럼에도 과세관청이 과세이연 특례 적용을 부인한 처분은 위법하다. 조세법률주의 원칙상 과세요건뿐 아니라 조세감면 요건도 법문대로 엄격하게 해석하여야 하므로, 법령에 명시되지 않은 기존 공장이 수도권과밀억제권역 안에 소재하여야 한다는 요건을 자의적으로 추가하여, 이 사건과 같이 수도권 밖에서 수도권 밖으로 이전한 경우를 축소·유추해석으로 특례 대상에서 배제하는 것은 허용되지 않기 때문이다.',
+    2:
+        '법인 본사 지방이전에 따른 세액감면을 적용받기 위해서는 다음 요건을 모두 갖추어야 한다. ' +
+        '첫째, 기존 본사 요건으로서 수도권과밀억제권역에 3년 이상 계속하여 본사 또는 주사무소를 두고 있던 법인이어야 한다. ' +
+        '둘째, 업종 요건으로서 부동산업, 건설업, 소비성서비스업 등 세법에서 정한 제외 업종에 해당하지 아니하여야 한다. ' +
+        '셋째, 투자 및 근무인원 요건으로서 이전한 본사에 10억 원 이상을 투자하고 이전 본사에서 근무하는 인원이 20명 이상이어야 한다.',
+    3:
+        '(주)새롬은 본사 지방이전에 따른 법인세 감면으로, 이전 후 최초로 소득이 발생한 과세연도와 그 다음 4년을 합한 5년간은 법인세의 100%를 감면받고, 그 후 3년간은 법인세의 50%를 감면받는다. ' +
+        '한편 감면이 적용되는 감면대상 소득비율은 이전본사 근무인원 수를 법인 전체 근무인원 수로 나눈 비율로 산정하는데, 사안에서는 전체 임직원 60명 중 이전 본사에서 근무하는 인원이 40명이므로 감면대상 소득비율은 40/60, 즉 약 66.6%(또는 2/3)가 된다.',
+}
+
+const INCOMPLETE_ANSWERS_46: Record<number, string> = {
+    1: '공장을 다른 지역으로 옮기면 세금 혜택을 받을 수 있다고 알고 있고, 이 사건 처분도 특별히 문제는 없어 보인다.',
+    2: '본사를 지방으로 옮기면 세액감면을 받을 수 있다고 알고 있다.',
+    3: '감면 혜택은 몇 년간 받을 수 있고, 비율은 근무인원에 따라 정해지는 것으로 보인다.',
+}
+
+// ── 일반화된 오답: 자신감 있는 어조로 일반 원칙을 내세우되 구체적 요건·예외(수도권 안/밖 구분,
+//    투자·인원 요건, 감면기간·비율 산정방식)를 무시하거나 뒤집어서 결론이 틀린 답안
+const OVERGENERALIZED_ANSWERS_46: Record<number, string> = {
+    1:
+        '공장이전 과세특례는 수도권과밀억제권역 안에 있던 공장을 그 밖으로 이전하여 지방분산을 유도하려는 취지의 제도이므로, 애초부터 수도권 밖에 있던 공장을 다른 수도권 밖 지역으로 옮기는 경우는 제도가 예정한 지방이전에 해당하지 않아 특례 대상이 될 수 없다고 본다. 따라서 과세관청이 (주)새롬의 특례 적용을 부인하고 법인세를 경정·고지한 처분은 적법하다.',
+    2:
+        '본사 지방이전에 따른 세액감면은 수도권에 있던 회사를 지방으로 유도하기 위한 제도이므로, 본사를 지방으로 옮기기만 하면 그 취지에 부합하는 것이고 투자금액이나 근무인원 수와 같은 부수적 조건까지 반드시 갖출 필요는 없다고 본다. 업종이나 투자·인원 요건은 감면 여부와 무관하게 참고사항에 불과하다.',
+    3:
+        '법인세 감면은 지방이전이라는 정책목적을 달성하기 위한 것이므로, 이전한 법인이 존속하는 한 그 소득 전체에 대하여 기간 제한 없이 100% 감면되는 것이 원칙이라고 본다. 감면대상 소득비율도 이전의 정책적 취지를 고려하면 법인 전체 소득에 대하여 일률적으로 적용되어야 하고, 근무인원 수와 같은 세부적인 산식으로 축소할 것은 아니다.',
+}
+
+// ── 절반 답안: 물음마다 일부 루브릭만 충족하는 내용을 쓰고 나머지는 완전히 생략
+//    (물음 1은 뒤쪽 루브릭, 물음 2는 가운데 루브릭, 물음 3은 앞쪽 루브릭을 생략해 위치 편향 없이 검증)
+const HALF_ANSWERS_46: Record<number, string> = {
+    // 물음 1(10점): "공장이전 과세특례 요건"(6점)만 서술, "과세관청 처분의 적법성 및 근거"(4점)는 미언급
+    1: '중소기업의 공장이전에 대한 과세특례를 적용받기 위해서는, 2년 이상 계속하여 공장시설을 갖추고 사업을 영위한 중소기업이 수도권과밀억제권역 밖의 지역으로 공장을 이전하여야 하고, 선이전 후양도 기준에 따라 신규 공장을 취득하여 사업을 개시한 날로부터 2년 이내에 기존 공장을 양도하여야 한다.',
+    // 물음 2(8점): "기존 본사 요건"(3점)+"업종 요건"(2점)만 서술, "투자 및 근무인원 요건"(3점)은 미언급
+    2: '법인 본사 지방이전에 따른 세액감면을 적용받기 위해서는 수도권과밀억제권역에 3년 이상 계속하여 본사 또는 주사무소를 두고 있던 법인이어야 하고, 부동산업, 건설업, 소비성서비스업 등 세법에서 정한 제외 업종에 해당하지 아니하여야 한다.',
+    // 물음 3(7점): "감면대상 소득비율 산출"(3점)만 서술, "감면기간 및 감면비율"(4점)은 미언급
+    3: '감면이 적용되는 감면대상 소득비율은 이전본사 근무인원 수를 법인 전체 근무인원 수로 나눈 비율로 산정하는데, 사안에서는 전체 임직원 60명 중 이전 본사에서 근무하는 인원이 40명이므로 감면대상 소득비율은 40/60, 즉 약 66.6%(또는 2/3)가 된다.',
+}
+
+const HALF_COVERAGE_46: Record<number, { covered: string[]; omitted: string[] }> = {
+    1: {
+        covered: ['공장이전 과세특례 요건'],
+        omitted: ['과세관청 처분의 적법성 및 근거'],
+    },
+    2: {
+        covered: ['기존 본사 요건', '업종 요건'],
+        omitted: ['투자 및 근무인원 요건'],
+    },
+    3: {
+        covered: ['감면대상 소득비율 산출'],
+        omitted: ['감면기간 및 감면비율'],
+    },
+}
+// 절반 답안 기대 총점: 6 + 5 + 3 = 14 / 25 (56%)
+
+// ── 애매한 표현 답안: STRONG_ANSWERS_46과 논리·내용은 동일하지만 완곡하게 풀어 씀
+const AMBIGUOUS_ANSWERS_46: Record<number, string> = {
+    1:
+        '이런 세제 혜택을 받으려면, 어느 정도 기간—대략 2년 넘게—공장을 실제로 운영해온 작은 규모의 회사가, 수도권의 복잡한 지역 밖에 있다가 마찬가지로 그런 지역이 아닌 다른 곳으로 옮기는 식이어야 하고, 새로 지은 공장에서 일을 시작한 뒤로 2년이 지나기 전에 예전 공장을 넘기는 순서를 지켜야 한다고 본다. ' +
+        "이 사안을 보면, (주)새롬은 진작부터 수도권 바깥인 청주에서 십수 년째 공장을 돌려왔고, 마찬가지로 수도권 바깥인 목포에 새 공장을 지어 옮긴 뒤 얼마 지나지 않아 옛 공장을 팔았으니 겉보기로는 앞서 말한 순서와 기간 조건을 다 지킨 셈이다. 그런데도 세무당국이 혜택을 안 준 것은 문제가 있어 보인다. 세금과 관련된 규정은 정해진 글자 그대로만 좁게 해석해야 하는 것이 원칙인데, 법에 적혀 있지도 않은 '예전 공장이 그 복잡한 지역 안에 있어야 한다'는 조건을 마음대로 끼워 넣어, 이번처럼 바깥에서 바깥으로 옮긴 경우까지 억지로 혜택 대상에서 빼버리는 건 옳지 않기 때문이다.",
+    2:
+        '본사를 지방으로 옮겼을 때 세금을 깎아주는 혜택을 받으려면 몇 가지를 갖추어야 한다고 본다. 우선 그 전에 복잡한 수도권 지역에다 적어도 3년 넘게 계속 본사나 주된 사무소를 두고 있었던 회사여야 하고, 부동산을 다루거나 집을 짓는 업이라든지 유흥 관련 서비스업처럼 법에서 따로 빼놓은 업종에는 해당하지 않아야 하며, 옮겨간 곳에 10억 원이 넘는 돈을 들이고 그곳에서 실제로 일하는 사람이 20명을 넘어야 한다는 조건도 채워야 한다.',
+    3:
+        '(주)새롬은 본사를 지방으로 옮긴 데 따른 법인세 혜택으로, 옮기고 나서 처음 돈을 번 해부터 쳐서 다섯 해 동안은 법인세를 전액 면제받고, 그 뒤 세 해 동안은 절반만 면제받게 된다. 한편 혜택이 적용되는 소득의 비율은 옮겨간 본사에서 일하는 사람 수를 회사 전체 인원 수로 나누어서 정하는데, 이 사안에서는 전체 예순 명 가운데 옮겨간 곳에서 일하는 사람이 마흔 명이므로 그 비율은 40 나누기 60, 즉 대략 66.6퍼센트(또는 3분의 2)가 된다.',
+}
+
 interface ProblemFixture {
     problem: ProblemWithDetails
     label: string
@@ -784,6 +1013,17 @@ const PROBLEM9_FIXTURE: ProblemFixture = {
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_9,
 }
 
+const PROBLEM46_FIXTURE: ProblemFixture = {
+    problem: problem46,
+    label: '문제 46(공장·본사 지방이전 세액특례)',
+    strongAnswers: STRONG_ANSWERS_46,
+    incompleteAnswers: INCOMPLETE_ANSWERS_46,
+    halfAnswers: HALF_ANSWERS_46,
+    halfCoverage: HALF_COVERAGE_46,
+    ambiguousAnswers: AMBIGUOUS_ANSWERS_46,
+    overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_46,
+}
+
 type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized'
 
 function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] {
@@ -791,12 +1031,12 @@ function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] 
         mode === 'incomplete'
             ? fixture.incompleteAnswers
             : mode === 'half'
-            ? fixture.halfAnswers
-            : mode === 'ambiguous'
-            ? fixture.ambiguousAnswers
-            : mode === 'overgeneralized'
-            ? fixture.overgeneralizedAnswers
-            : fixture.strongAnswers
+                ? fixture.halfAnswers
+                : mode === 'ambiguous'
+                    ? fixture.ambiguousAnswers
+                    : mode === 'overgeneralized'
+                        ? fixture.overgeneralizedAnswers
+                        : fixture.strongAnswers
     if (!src) {
         throw new Error(`${fixture.label}은(는) --${mode} 모드를 지원하지 않습니다.`)
     }
@@ -829,27 +1069,29 @@ async function main() {
     const fixture = process.argv.includes('--problem51')
         ? PROBLEM51_FIXTURE
         : process.argv.includes('--problem9')
-        ? PROBLEM9_FIXTURE
-        : PROBLEM1_FIXTURE
+            ? PROBLEM9_FIXTURE
+            : process.argv.includes('--problem46')
+                ? PROBLEM46_FIXTURE
+                : PROBLEM1_FIXTURE
     const mode: Mode = process.argv.includes('--half')
         ? 'half'
         : process.argv.includes('--incomplete')
-        ? 'incomplete'
-        : process.argv.includes('--ambiguous')
-        ? 'ambiguous'
-        : process.argv.includes('--overgeneralized')
-        ? 'overgeneralized'
-        : 'strong'
+            ? 'incomplete'
+            : process.argv.includes('--ambiguous')
+                ? 'ambiguous'
+                : process.argv.includes('--overgeneralized')
+                    ? 'overgeneralized'
+                    : 'strong'
     const modeLabel =
         mode === 'half'
             ? '절반 답안(비례성 확인)'
             : mode === 'incomplete'
-            ? '관대화 방지(불완전 답안)'
-            : mode === 'ambiguous'
-            ? '애매한 표현(논리는 맞지만 완곡한 답안)'
-            : mode === 'overgeneralized'
-            ? '일반화된 오답(논리는 틀렸지만 자신감 있는 답안)'
-            : '재현(충실한 답안)'
+                ? '관대화 방지(불완전 답안)'
+                : mode === 'ambiguous'
+                    ? '애매한 표현(논리는 맞지만 완곡한 답안)'
+                    : mode === 'overgeneralized'
+                        ? '일반화된 오답(논리는 틀렸지만 자신감 있는 답안)'
+                        : '재현(충실한 답안)'
     console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
 
     const answers = buildAnswers(fixture, mode)
@@ -872,8 +1114,7 @@ async function main() {
             const status = (rr as unknown as { status?: string }).status ?? '(status 없음)'
             const quote = (rr as unknown as { evidenceQuote?: string }).evidenceQuote
             console.log(
-                `  - ${rr.criterionName}: ${rr.awardedScore}/${rr.maxScore} [${status}]${
-                    quote ? ` 근거: "${quote}"` : ''
+                `  - ${rr.criterionName}: ${rr.awardedScore}/${rr.maxScore} [${status}]${quote ? ` 근거: "${quote}"` : ''
                 }`
             )
         }
