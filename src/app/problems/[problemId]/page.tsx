@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { ProblemWithDetails } from '@/types/db'
 import AnswerForm from '@/components/AnswerForm'
@@ -44,6 +45,19 @@ export default async function ProblemPage({
         .eq('id', typedProblem.subject_id)
         .single()
 
+    // 로그인 유저 tier 조회 (힌트/정답보기 버튼 표시용)
+    const authClient = await createClient()
+    const { data: { user: authUser } } = await authClient.auth.getUser()
+    let userTier: 'guest' | 'member' | 'pro' | 'admin' = 'guest'
+    if (authUser && !authUser.is_anonymous) {
+        const { data: ctaUser } = await supabase
+            .from('cta_user')
+            .select('tier')
+            .eq('id', authUser.id)
+            .single()
+        userTier = (ctaUser?.tier as 'member' | 'pro' | 'admin') || 'member'
+    }
+
     return (
         <div className="container">
             <Link href={`/subjects/${typedProblem.subject_id}`} className="back-link">
@@ -78,7 +92,7 @@ export default async function ProblemPage({
             )}
 
             {/* 답안 입력 + 채점 결과 (Client Component) */}
-            <AnswerForm problem={typedProblem} />
+            <AnswerForm problem={typedProblem} userTier={userTier} />
         </div>
     )
 }

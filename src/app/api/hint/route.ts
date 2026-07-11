@@ -73,11 +73,21 @@ export async function POST(req: Request) {
     }
 
     // keywords_json 형태에 따라 키워드 배열 추출
+    // 실 데이터는 JSON 문자열(예: '["a","b"]')로 저장되어 있어 우선 파싱을 시도한다.
     const keywords: string[] = rubrics.flatMap((r) => {
-        const kj = r.keywords_json
+        let kj: unknown = r.keywords_json
         if (!kj) return []
-        if (Array.isArray(kj)) return kj as string[]
-        if (typeof kj === 'object') {
+        if (typeof kj === 'string') {
+            try {
+                kj = JSON.parse(kj)
+            } catch {
+                return []
+            }
+        }
+        if (Array.isArray(kj)) {
+            return kj.filter((v): v is string => typeof v === 'string')
+        }
+        if (typeof kj === 'object' && kj !== null) {
             return Object.values(kj as Record<string, unknown>)
                 .flatMap((v) => (Array.isArray(v) ? v : [v]))
                 .filter((v): v is string => typeof v === 'string')
