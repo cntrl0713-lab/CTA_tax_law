@@ -39,6 +39,8 @@ export interface SubquestionRubric {
     description_display: string | null
     description_compact: string | null
     keywords_json: Record<string, unknown> | null
+    /** @deprecated keywords_json 사용 권장. 하위 호환용 */
+    keywords?: string[]
     example_answer_text: string | null
 }
 
@@ -62,4 +64,53 @@ export interface CtaUser {
     exp: number
     created_at: string
     updated_at: string
+}
+
+/** 힌트/정답보기 사용 이력 */
+export interface FeatureLog {
+    id: number
+    user_id: string
+    problem_id: number
+    subquestion_id: number
+    feature_type: 'hint' | 'answer'
+    created_at: string
+}
+
+/** 채점 이력 (오답노트 포함) */
+export interface GradingAttempt {
+    id: string
+    user_id: string
+    problem_id: number
+    answers_json: { subquestionNumber: number; answerText: string }[]
+    result_json: {
+        totalScore: number
+        maxScore?: number
+        subquestions: {
+            number: number
+            awardedScore: number
+            maxScore: number
+            feedback: string
+            rubricResults: {
+                criterionName: string
+                awardedScore: number
+                maxScore: number
+                status: 'met' | 'partially_met' | 'unmet'
+                evidenceQuote?: string
+                met?: boolean
+            }[]
+        }[]
+        overallComment: string
+    }
+    hint_used: boolean
+    is_saved_note: boolean
+    note_saved_at: string | null
+    created_at: string
+    /** JOIN: cta_problem */
+    cta_problem?: {
+        id: number
+        title: string
+        total_score: number
+        subject_id: number
+        cta_subject?: { id: number; name: string }
+    }
 }

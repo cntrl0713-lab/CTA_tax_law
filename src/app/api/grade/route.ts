@@ -113,20 +113,29 @@ export async function POST(request: Request) {
             )
         }
 
-        // 7. Gemini 채점 호출
+        // 7-1. 힌트/정답 사용 이력 확인 (채점 통계 제외 여부를 결정)
+        const { count: featureCount } = await adminSupabase
+            .from('cta_feature_log')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('problem_id', problemId)
+        const hintUsedFlag = (featureCount ?? 0) > 0
+
+        // 7-2. Gemini 채점 호출
         const result = await gradeProblem(
             problem as ProblemWithDetails,
             answers
         )
 
-        // 8. 채점 성공 시 로그 기록
+        // 8. 채점 성공 시 로그 기록 (hint_used 포함)
         const { data: attemptData, error: logError } = await adminSupabase
             .from('cta_grading_attempt')
             .insert({
                 user_id: user.id,
                 problem_id: problemId,
                 answers_json: answers,
-                result_json: result
+                result_json: result,
+                hint_used: hintUsedFlag,
             })
             .select('id')
             .single()

@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import type { ProblemWithDetails } from '@/types/db'
+import SaveNoteButton from '@/components/SaveNoteButton'
 
 interface PageProps {
     params: Promise<{ attemptId: string }>
@@ -53,6 +55,19 @@ export default async function ProblemResultPage({ params }: PageProps) {
         .select('name')
         .eq('id', typedProblem.subject_id)
         .single()
+
+    // 로그인 유저 tier 조회 (오답노트 버튼 표시용)
+    const authClient = await createClient()
+    const { data: { user: authUser } } = await authClient.auth.getUser()
+    let userTier: 'guest' | 'member' | 'pro' | 'admin' = 'guest'
+    if (authUser && !authUser.is_anonymous) {
+        const { data: ctaUser } = await supabase
+            .from('cta_user')
+            .select('tier')
+            .eq('id', authUser.id)
+            .single()
+        userTier = (ctaUser?.tier as 'member' | 'pro' | 'admin') || 'member'
+    }
 
     // 제출 답안 리스트 맵화
     const answersList = (attempt.answers_json || []) as { subquestionNumber: number; answerText: string }[]
@@ -147,6 +162,15 @@ export default async function ProblemResultPage({ params }: PageProps) {
                         </p>
                     </div>
                 </div>
+            </div>
+
+            {/* 오답노트 저장 버튼 */}
+            <div style={{ marginBottom: '20px' }}>
+                <SaveNoteButton
+                    attemptId={attemptId}
+                    initialSaved={attempt.is_saved_note === true}
+                    userTier={userTier}
+                />
             </div>
 
             {/* 1. 사실관계 */}
