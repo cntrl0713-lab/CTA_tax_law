@@ -10,9 +10,13 @@
  *       부당하게 0점 처리되지 않는지 (ambiguous)
  *   (5) 논리적으로 틀렸지만 자신감 있는 어조로 일반 원칙을 내세우는 답안이 그럴듯한 말투에
  *       속아 관대하게 채점되지 않는지 (overgeneralized)
- *   (6) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
- *   (7) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
- *   (8) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
+ *   (6) 한 루브릭 안에 여러 요건이 있을 때 그중 일부만 서술한 답안이 status===partially_met +
+ *       0점도 만점도 아닌 진짜 부분 점수로 채점되는지, 그 여파로 같은 물음의 무관한 다른
+ *       루브릭까지 덩달아 깎이지 않는지 (partial) — half가 "루브릭 단위"의 이진(포함/누락)
+ *       비례성을 본다면, partial은 "루브릭 하나 내부" 요건 일부 충족의 세분화된 점수 부여를 본다
+ *   (7) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
+ *   (8) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
+ *   (9) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
  *       (유령 근거/점수 부풀림 탐지 — gradeProblem.ts 내부 함수를 재사용하지 않고 독립 재구현)
  *
  * 허위 누락 탐지는 특정 단어 하드코딩이 아니라, 피드백의 "'X' 누락/언급 없음" 패턴에서
@@ -34,6 +38,9 @@
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --half
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --ambiguous
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --overgeneralized
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --partial             # 문제1 루브릭 내 부분충족
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --partial
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --partial
  */
 import { gradeProblem } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
@@ -311,6 +318,36 @@ const AMBIGUOUS_ANSWERS: Record<number, string> = {
         '이 사안을 보면, 회사가 갖고 있던 땅이 새 도시를 만드는 구역으로 지정되어 개발이 진행되면서 그 회사 자체의 가치가 올라갔고, 그 때문에 甲이 쥐고 있던 지분의 가치도 크게 뛰었으니, 둘 사이의 흐름이 꽤 뚜렷하게 이어진다고 볼 수 있다. 그러니 물건이 서로 다르다는 형식적인 사정만 가지고 세금을 매길 수 없다고 하는 甲의 말은 받아들이기 어렵다.',
 }
 
+// ── 부분충족 답안: STRONG_ANSWERS와 동일하되, 물음 1·2·3 각각에서 여러 요건을 담은 루브릭
+//    하나씩을 골라 그중 한 요건만 통째로 빼고 서술함 (그 물음의 다른 루브릭은 STRONG 그대로) —
+//    한 물음에서만이 아니라 세 물음 모두에서 partially_met(0 < 점수 < 만점)이 정확히 나오는지,
+//    그 여파로 같은 물음의 무관한 다른 루브릭까지 덩달아 깎이지는 않는지(기준별 독립 판단,
+//    시스템 프롬프트 규칙 13) 확인:
+//      물음1 "재산가치 증가사유 발생 요건": ① 5년 이내 시기 요건 ② 법정 사유 발생 — ①을 뺌
+//      물음2 "판례 법리": ① 개발구역 지정고시 수반 ② 그 토지가치를 증가시키는 사업 — ②를 뺌
+//      물음3 "판례 법리": ① 재산 동일성 불요 ② 인과관계 인정 시 간접이익도 과세대상 포함 — ②를 뺌 ──
+const PARTIAL_ANSWERS: Record<number, string> = {
+    1:
+        '재산 취득 후 재산가치 증가에 따른 이익의 증여로 과세되려면 다음 세 요건을 모두 갖추어야 한다. ' +
+        '첫째, 수증자 및 취득사유 요건으로서 직업·연령·소득 및 재산상태로 보아 자신의 계산과 자력으로 해당 행위를 할 수 없다고 인정되는 자(미성년자 등)가, 특수관계인으로부터 재산을 증여받거나, 특수관계인으로부터 공표되지 아니한 내부정보를 제공받아 관련 재산을 유상으로 취득하거나, 특수관계인으로부터 증여·차입한 자금으로 재산을 취득하여야 한다. ' +
+        '둘째, 재산가치 증가사유 발생 요건으로서 개발사업의 시행, 형질변경, 공유물 분할, 사업의 인가·허가, 비상장주식의 K-OTC 등록, 코넥스시장 상장 등 법정 재산가치 증가사유가 발생하여야 한다. ' +
+        '셋째, 기준금액 이상의 이익 획득 요건으로서 그로 인해 얻은 재산가치상승금액이 3억 원 이상이거나, 취득가액과 통상적인 가치상승분 및 가치상승기여분 합계액의 30% 이상이어야 한다.',
+    2:
+        '석유화학공장 완공을 개발사업의 시행으로 본 과세관청의 처분은 위법하다. ' +
+        '대법원은 재산가치증가사유인 개발사업의 시행을 적어도 개발구역의 지정·고시가 수반되어 토지를 개발하는 사업으로 엄격하게 해석한다. ' +
+        '사안에서 (주)A가 토지개발과 무관하게 단순히 소유하던 일반 부지 위에 석유화학공장을 완공하고 제품 생산을 개시한 사정만으로는 법령이 예정한 개발사업의 시행에 해당한다고 볼 수 없으므로, 이를 개발사업의 시행으로 보아 과세한 처분은 위법하다.',
+    3:
+        '간접적 이익은 과세할 수 없다는 甲의 주장은 타당하지 않다. ' +
+        '대법원은 조세회피 방지라는 입법취지를 고려할 때 재산가치증가사유의 직접적 대상인 재산(토지)과 수증자가 취득한 재산(주식)이 반드시 동일할 필요는 없다고 본다. ' +
+        '사안에서 (주)A 소유 토지가 신도시 개발구역으로 지정되어 개발사업이 시행됨으로써 (주)A의 기업가치가 상승하였고 그 결과 甲의 주식가치가 폭등하였으므로 명확한 인과관계가 인정된다. 따라서 재산이 동일하지 않다는 형식적 이유만으로 과세를 부정할 수 없어 甲의 주장은 타당하지 않다.',
+}
+// 부분충족 모드가 겨냥하는 루브릭들 (물음 번호 + 기준명), 물음마다 하나씩
+const PARTIAL_TARGETS: { subquestionNumber: number; criterionName: string }[] = [
+    { subquestionNumber: 1, criterionName: '재산가치 증가사유 발생 요건' },
+    { subquestionNumber: 2, criterionName: '판례 법리' },
+    { subquestionNumber: 3, criterionName: '판례 법리' },
+]
+
 // ── 문제 9 데이터: cta_uploader/data/problem_9.json + upload_cta.py 변환 로직과 동일
 //    (id 체계: subquestion.id = {problem_id}{number}, rubric.id = {subquestion_id}{rubric_index};
 //     case_text_full/compact는 원본 배열을 " "로 join한 값이 실제 DB 저장값) ──
@@ -522,6 +559,28 @@ const AMBIGUOUS_ANSWERS_9: Record<number, string> = {
     2:
         '공통으로 쓰는 자산에 대해 나중에 다시 계산을 해보려면 몇 가지가 갖춰져 있어야 한다고 본다. 우선 애초에 세금을 나눠서 일부만 돌려받은 자산이어야 하고, 시간이 지나며 가치가 줄어드는 성격의 자산이어야 하며, 처음 나눠 계산했을 때의 면세 쪽 비중과 나중에 다시 따져볼 때의 비중 사이에 차이가 다섯 퍼센트 이상 벌어져 있어야 한다. ' +
         '그리고 이렇게 다시 계산하는 건 중간에 미리 하는 신고 때는 하지 않고, 그 기간이 다 끝난 뒤 최종적으로 정리하는 신고 때 가서야 하게 된다. 다만 그 자산을 이미 남에게 넘겨버렸다든지 하는 식으로 사실상 다른 형태로 처리된 경우이거나, 자산 자체가 없어지거나 버려진 경우에는 이런 재계산을 굳이 하지 않는다고 본다.',
+}
+
+// ── 부분충족 답안: STRONG_ANSWERS_9와 동일하되, 물음 1·2 각각에서 여러 요소를 담은 루브릭
+//    하나씩을 골라 그중 한 요소만 통째로 빼고 서술함:
+//      물음1 "공급가액 산정방법": ① 당초 취득가액 기준 ② 경과 과세기간별 체감률(상각률) 반영 — ②를 뺌
+//      물음2 "재계산 시기": ① 예정신고 시에는 하지 않음 ② 확정신고 시에만 함 — ②를 뺌
+const PARTIAL_ANSWERS_9: Record<number, string> = {
+    1:
+        '면세전용 과세는 매입세액을 공제받은 자와 처음부터 면세사업용으로 사들여 공제받지 못한 자 사이의 과세형평을 유지하기 위한 것이며, 부가가치세 부담이 없는 소비를 방지하기 위한 제도이다. ' +
+        '화물트럭과 같은 감가상각자산을 면세전용하는 경우의 과세표준은 당초 취득가액을 기준으로 산출한 간주공급가액으로 한다.',
+    2:
+        '공통매입세액의 재계산이 적용되려면, 당초 공통매입세액을 안분계산하여 매입세액을 공제받은 자산이어야 하고, 해당 자산이 감가상각자산이어야 하며, 당초 안분계산 시의 면세비율과 재계산하는 과세기간의 면세비율 차이가 5% 이상 증감하여야 한다. ' +
+        '재계산은 예정신고 시에는 하지 아니한다. ' +
+        '다만 공통사용 감가상각자산을 타인에게 매각하는 등 재화의 공급에 해당하는 경우나, 그 자산이 멸실되거나 폐기된 경우에는 예외적으로 재계산이 배제된다.',
+}
+const PARTIAL_TARGETS_9: { subquestionNumber: number; criterionName: string }[] = [
+    { subquestionNumber: 1, criterionName: '공급가액 산정방법' },
+    { subquestionNumber: 2, criterionName: '재계산 시기' },
+]
+const PARTIAL_TARGET_9: { subquestionNumber: number; criterionName: string } = {
+    subquestionNumber: 1,
+    criterionName: '공급가액 산정방법',
 }
 
 // ── 문제 46 데이터: cta_uploader/data/problem_46.json과 동일
@@ -748,7 +807,32 @@ const AMBIGUOUS_ANSWERS_46: Record<number, string> = {
         '(주)새롬은 본사를 지방으로 옮긴 데 따른 법인세 혜택으로, 옮기고 나서 처음 돈을 번 해부터 쳐서 다섯 해 동안은 법인세를 전액 면제받고, 그 뒤 세 해 동안은 절반만 면제받게 된다. 한편 혜택이 적용되는 소득의 비율은 옮겨간 본사에서 일하는 사람 수를 회사 전체 인원 수로 나누어서 정하는데, 이 사안에서는 전체 예순 명 가운데 옮겨간 곳에서 일하는 사람이 마흔 명이므로 그 비율은 40 나누기 60, 즉 대략 66.6퍼센트(또는 3분의 2)가 된다.',
 }
 
-interface ProblemFixture {
+// ── 부분충족 답안: STRONG_ANSWERS_46과 동일하되, 물음 1·2·3 각각에서 여러 요소를 담은 루브릭
+//    하나씩을 골라 그중 한 요소만 통째로 빼고 서술함 (그 물음의 다른 루브릭은 STRONG 그대로):
+//      물음1 "공장이전 과세특례 요건": ① 2년 이상 영위 ② 수도권 밖 이전 ③ 선이전 후양도 2년 이내 — ③을 뺌
+//      물음2 "투자 및 근무인원 요건": ① 10억 원 이상 투자 ② 20명 이상 근무인원 — ②를 뺌
+//      물음3 "감면기간 및 감면비율": ① 5년간 100% 감면 ② 그 후 3년간 50% 감면 — ②를 뺌
+const PARTIAL_ANSWERS_46: Record<number, string> = {
+    1:
+        '중소기업의 공장이전에 대한 과세특례를 적용받기 위해서는, 2년 이상 계속하여 공장시설을 갖추고 사업을 영위한 중소기업이 수도권과밀억제권역 밖의 지역으로 공장을 이전하여야 한다. ' +
+        '사안의 경우 (주)새롬은 2013년부터 계속하여 수도권과밀억제권역 밖인 청주시에서 2년 이상 공장을 운영해왔고, 2025년 4월 역시 수도권과밀억제권역 밖인 목포시로 신규 공장을 준공·이전하였으므로 위 요건을 충족한다. ' +
+        '그럼에도 과세관청이 과세이연 특례 적용을 부인한 처분은 위법하다. 조세법률주의 원칙상 과세요건뿐 아니라 조세감면 요건도 법문대로 엄격하게 해석하여야 하므로, 법령에 명시되지 않은 기존 공장이 수도권과밀억제권역 안에 소재하여야 한다는 요건을 자의적으로 추가하여, 이 사건과 같이 수도권 밖에서 수도권 밖으로 이전한 경우를 축소·유추해석으로 특례 대상에서 배제하는 것은 허용되지 않기 때문이다.',
+    2:
+        '법인 본사 지방이전에 따른 세액감면을 적용받기 위해서는 다음 요건을 모두 갖추어야 한다. ' +
+        '첫째, 기존 본사 요건으로서 수도권과밀억제권역에 3년 이상 계속하여 본사 또는 주사무소를 두고 있던 법인이어야 한다. ' +
+        '둘째, 업종 요건으로서 부동산업, 건설업, 소비성서비스업 등 세법에서 정한 제외 업종에 해당하지 아니하여야 한다. ' +
+        '셋째, 투자 및 근무인원 요건으로서 이전한 본사에 10억 원 이상을 투자하여야 한다.',
+    3:
+        '(주)새롬은 본사 지방이전에 따른 법인세 감면으로, 이전 후 최초로 소득이 발생한 과세연도와 그 다음 4년을 합한 5년간은 법인세의 100%를 감면받는다. ' +
+        '한편 감면이 적용되는 감면대상 소득비율은 이전본사 근무인원 수를 법인 전체 근무인원 수로 나눈 비율로 산정하는데, 사안에서는 전체 임직원 60명 중 이전 본사에서 근무하는 인원이 40명이므로 감면대상 소득비율은 40/60, 즉 약 66.6%(또는 2/3)가 된다.',
+}
+const PARTIAL_TARGETS_46: { subquestionNumber: number; criterionName: string }[] = [
+    { subquestionNumber: 1, criterionName: '공장이전 과세특례 요건' },
+    { subquestionNumber: 2, criterionName: '투자 및 근무인원 요건' },
+    { subquestionNumber: 3, criterionName: '감면기간 및 감면비율' },
+]
+
+export interface ProblemFixture {
     problem: ProblemWithDetails
     label: string
     strongAnswers: Record<number, string>
@@ -757,9 +841,11 @@ interface ProblemFixture {
     halfCoverage?: Record<number, { covered: string[]; omitted: string[] }>
     ambiguousAnswers?: Record<number, string>
     overgeneralizedAnswers?: Record<number, string>
+    partialAnswers?: Record<number, string>
+    partialTargets?: { subquestionNumber: number; criterionName: string }[]
 }
 
-const PROBLEM1_FIXTURE: ProblemFixture = {
+export const PROBLEM1_FIXTURE: ProblemFixture = {
     problem: problem1,
     label: '문제 1(재산가치 증가이익의 증여)',
     strongAnswers: STRONG_ANSWERS,
@@ -768,9 +854,11 @@ const PROBLEM1_FIXTURE: ProblemFixture = {
     halfCoverage: HALF_COVERAGE,
     ambiguousAnswers: AMBIGUOUS_ANSWERS,
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS,
+    partialAnswers: PARTIAL_ANSWERS,
+    partialTargets: PARTIAL_TARGETS,
 }
 
-const PROBLEM9_FIXTURE: ProblemFixture = {
+export const PROBLEM9_FIXTURE: ProblemFixture = {
     problem: problem9,
     label: '문제 9(면세전용과 공통매입세액 재계산)',
     strongAnswers: STRONG_ANSWERS_9,
@@ -779,9 +867,11 @@ const PROBLEM9_FIXTURE: ProblemFixture = {
     halfCoverage: HALF_COVERAGE_9,
     ambiguousAnswers: AMBIGUOUS_ANSWERS_9,
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_9,
+    partialAnswers: PARTIAL_ANSWERS_9,
+    partialTargets: PARTIAL_TARGETS_9,
 }
 
-const PROBLEM46_FIXTURE: ProblemFixture = {
+export const PROBLEM46_FIXTURE: ProblemFixture = {
     problem: problem46,
     label: '문제 46(공장·본사 지방이전 세액특례)',
     strongAnswers: STRONG_ANSWERS_46,
@@ -790,9 +880,11 @@ const PROBLEM46_FIXTURE: ProblemFixture = {
     halfCoverage: HALF_COVERAGE_46,
     ambiguousAnswers: AMBIGUOUS_ANSWERS_46,
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_46,
+    partialAnswers: PARTIAL_ANSWERS_46,
+    partialTargets: PARTIAL_TARGETS_46,
 }
 
-type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized'
+type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized' | 'partial'
 
 function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] {
     const src =
@@ -804,7 +896,9 @@ function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] 
                     ? fixture.ambiguousAnswers
                     : mode === 'overgeneralized'
                         ? fixture.overgeneralizedAnswers
-                        : fixture.strongAnswers
+                        : mode === 'partial'
+                            ? fixture.partialAnswers
+                            : fixture.strongAnswers
     if (!src) {
         throw new Error(`${fixture.label}은(는) --${mode} 모드를 지원하지 않습니다.`)
     }
@@ -852,7 +946,9 @@ async function main() {
                 ? 'ambiguous'
                 : process.argv.includes('--overgeneralized')
                     ? 'overgeneralized'
-                    : 'strong'
+                    : process.argv.includes('--partial')
+                        ? 'partial'
+                        : 'strong'
     const modeLabel =
         mode === 'half'
             ? '절반 답안(비례성 확인)'
@@ -862,7 +958,9 @@ async function main() {
                     ? '애매한 표현(논리는 맞지만 완곡한 답안)'
                     : mode === 'overgeneralized'
                         ? '일반화된 오답(논리는 틀렸지만 자신감 있는 답안)'
-                        : '재현(충실한 답안)'
+                        : mode === 'partial'
+                            ? '부분충족(단일 루브릭 내 요건 일부만 충족)'
+                            : '재현(충실한 답안)'
     console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
 
     const answers = buildAnswers(fixture, mode)
@@ -998,6 +1096,54 @@ async function main() {
             name: `일반화된 오답 총점이 만점의 40% 미만 (${result.totalScore}/${result.maxScore})`,
             pass: result.totalScore < result.maxScore * 0.4,
         })
+    } else if (mode === 'partial') {
+        // 물음마다 대상 루브릭 하나씩 요건 일부를 뺐으므로, 그 루브릭들은 각각 status===partially_met이면서
+        // 0점도 만점도 아닌 진짜 부분 점수를 받아야 하고(met으로 오판되면 normalizeScoresAgainstRubrics가
+        // 강제로 만점 처리하므로 이 체크가 그 오판을 그대로 드러낸다), 나머지 무관한 루브릭들은
+        // STRONG 그대로이므로 어느 물음에 있든 이 대상 루브릭 판정에 휩쓸리지 않고 만점을 유지해야 한다
+        // (기준별 독립 판단, 시스템 프롬프트 규칙 13) — 대상이 여러 물음에 걸쳐 있으므로 다물음 동시
+        // 채점 시 서로 간섭하지 않는지도 함께 확인하는 셈이다.
+        const targets = fixture.partialTargets
+        if (!targets || targets.length === 0) {
+            throw new Error(`${fixture.label}에 partialTargets가 정의되어 있지 않습니다.`)
+        }
+        const isTargetOf = (sqNumber: number, criterionName: string) =>
+            targets.some((t) => t.subquestionNumber === sqNumber && t.criterionName === criterionName)
+
+        let targetMaxScoreSum = 0
+        const foundTargetKeys = new Set<string>()
+        for (const sq of result.subquestions) {
+            for (const rr of sq.rubricResults) {
+                const status = (rr as unknown as { status?: string }).status
+                if (isTargetOf(sq.number, rr.criterionName)) {
+                    foundTargetKeys.add(`${sq.number}::${rr.criterionName}`)
+                    targetMaxScoreSum += rr.maxScore
+                    const ratio = rr.maxScore > 0 ? rr.awardedScore / rr.maxScore : 0
+                    checks.push({
+                        name: `물음 ${sq.number} "${rr.criterionName}"(요건 일부만 서술) status===partially_met (실제: ${status})`,
+                        pass: status === 'partially_met',
+                    })
+                    checks.push({
+                        name: `물음 ${sq.number} "${rr.criterionName}"(요건 일부만 서술) 0점도 만점도 아닌 부분 점수 (${rr.awardedScore}/${rr.maxScore})`,
+                        pass: ratio > 0 && ratio < 1,
+                    })
+                } else {
+                    checks.push({
+                        name: `물음 ${sq.number} "${rr.criterionName}"(무관한 루브릭, STRONG 그대로) 만점 유지 (${rr.awardedScore}/${rr.maxScore})`,
+                        pass: approxEqual(rr.awardedScore, rr.maxScore),
+                    })
+                }
+            }
+        }
+        for (const t of targets) {
+            if (!foundTargetKeys.has(`${t.subquestionNumber}::${t.criterionName}`)) {
+                throw new Error(`대상 루브릭 "${t.criterionName}"(물음 ${t.subquestionNumber})을 응답에서 찾지 못했습니다.`)
+            }
+        }
+        checks.push({
+            name: `총점 감점이 대상 루브릭들의 배점 합(${targetMaxScoreSum}점) 범위 내로 국한됨 (${result.totalScore}/${result.maxScore})`,
+            pass: result.totalScore > result.maxScore - targetMaxScoreSum && result.totalScore < result.maxScore,
+        })
     } else {
         checks.push({
             name: `충실한 답안 총점이 만점의 84% 이상 (${result.totalScore}/${result.maxScore})`,
@@ -1024,7 +1170,11 @@ async function main() {
     process.exit(allPass ? 0 : 1)
 }
 
-main().catch((err) => {
-    console.error('스크립트 실행 오류:', err)
-    process.exit(1)
-})
+// require.main===module 가드: 이 파일을 다른 진단 스크립트에서 픽스처(PROBLEM*_FIXTURE)만
+// import할 때, 여기의 main()이 부수 효과로 함께 실행되어 불필요한 Gemini 호출이 발생하지 않도록 함
+if (require.main === module) {
+    main().catch((err) => {
+        console.error('스크립트 실행 오류:', err)
+        process.exit(1)
+    })
+}

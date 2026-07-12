@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import type { ProblemWithDetails } from '@/types/db'
-import type { SubquestionAnswer, GradeResponse } from '@/types/grading'
+import type { SubquestionAnswer, GradeResponse, SubquestionResult } from '@/types/grading'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
@@ -332,11 +332,9 @@ function applyCorrections(
     return {
         ...result,
         subquestions: result.subquestions.map((sq) => {
-            const appliedNames: string[] = []
             const rubricResults = sq.rubricResults.map((rr) => {
                 const c = byKey.get(key(sq.number, rr.criterionName))
                 if (!c) return rr
-                appliedNames.push(rr.criterionName)
                 return { ...rr, evidenceQuote: c.evidenceQuote, status: c.status, awardedScore: c.awardedScore }
             })
             return { ...sq, rubricResults }
@@ -356,64 +354,21 @@ function forceZeroOutContradictions(
     if (contradictions.length === 0) return result
 
     const flagged = new Set(contradictions.map((c) => `${c.subquestionNumber}::${c.criterionName}`))
-    const namesBySq = new Map<number, string[]>()
-    for (const c of contradictions) {
-        const note =
-            c.reason === 'evidence_present_but_unmet'
-                ? `"${c.criterionName}"(재검토 후에도 0점 유지)`
-                : `"${c.criterionName}"(근거 미확인으로 0점 처리됨)`
-        namesBySq.set(c.subquestionNumber, [...(namesBySq.get(c.subquestionNumber) ?? []), note])
-    }
 
     return {
         ...result,
-        subquestions: result.subquestions.map((sq) => {
-            const names = namesBySq.get(sq.number)
-            if (!names) return sq
-            return {
-                ...sq,
-                rubricResults: sq.rubricResults.map((rr) =>
-                    flagged.has(`${sq.number}::${rr.criterionName}`)
-                        ? { ...rr, awardedScore: 0, status: 'unmet' as const }
-                        : rr
-                ),
-            }
-        }),
+        subquestions: result.subquestions.map((sq) => ({
+            ...sq,
+            rubricResults: sq.rubricResults.map((rr) =>
+                flagged.has(`${sq.number}::${rr.criterionName}`)
+                    ? { ...rr, awardedScore: 0, status: 'unmet' as const }
+                    : rr
+            ),
+        })),
     }
 }
 
-/**
- * Gemini 2.5 Flash-Lite를 호출하여 구조화된 JSON 채점 결과를 반환합니다.
- */
-export async function gradeProblem(
-    problem: ProblemWithDetails,
-    answers: SubquestionAnswer[]
-): Promise<GradeResponse> {
-    // ── 프롬프트 구성 ──
-    const subquestionPrompts = problem.cta_subquestion.map((sq) => {
-        const answer = answers.find((a) => a.subquestionNumber === sq.number)
-        const rubrics = sq.cta_subquestion_rubric
-            .sort((a, b) => a.display_order - b.display_order)
-            .map((r) => {
-                // 채점 정확도를 위해 기준 설명은 전문(full)을 우선 사용 (compact는 정보 손실로 오채점 유발)
-                const desc = r.description_display || r.description_compact
-                return `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${desc ? `\n    설명: ${desc}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
-            })
-            .join('\n')
-
-        return `
-### 물음 ${sq.number} (배점: ${sq.score}점)
-문제: ${sq.prompt_text_compact || sq.prompt_text_full || '(문제 텍스트 없음)'}
-
-채점 루브릭:
-${rubrics}
-
-수험생 답안:
-${answer?.answerText || '(답안 미작성)'}
-`
-    })
-
-    const systemPrompt = `당신은 세무사 시험 채점 전문가입니다. 
+const systemPrompt = `당신은 세무사 시험 채점 전문가입니다.
 아래의 세법 문제에 대한 수험생 답안을 채점해 주세요.
 
 채점 원칙:
@@ -422,7 +377,7 @@ ${answer?.answerText || '(답안 미작성)'}
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 논리 구조를 중심으로 평가하세요.
 5. 채점 기준은 "문구의 일치"가 아니라 "요건 충족의 실질"입니다. 수험생의 표현·어휘·문장 순서가 채점 기준 설명이나 모범답안 예시와 다르더라도, 법리적으로 같은 의미를 담고 있다면 만점(met)을 주세요. 결론을 근거보다 먼저 쓰는 등 서술 순서가 다르다는 이유만으로, 또는 모범답안과 다른 단어를 썼다는 이유만으로 감점하지 마세요.
-6. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요. 전체 총평은 공백 포함 80자 이내로 매우 간결하게 요약하여 작성하세요.
+6. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요.
 7. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
 8. 핵심 요건(수치, 법적 절차 요건 등)의 실질적 내용이 답안에 전혀 담겨 있지 않은 경우에만 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오. 서술이 간결하거나 모범답안과 다른 방식·순서로 쓰였다는 이유만으로 만점을 깎지 마세요 — 표현 방식이 아니라 요건의 실질적 누락 여부로만 판단하세요.
 9. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
@@ -431,7 +386,9 @@ ${answer?.answerText || '(답안 미작성)'}
 12. 답안에 해당 기준을 뒷받침하는 문장이 전혀 없다면, 다른 부분이 아무리 훌륭해도 그 기준은 반드시 unmet과 0점으로 처리하고 evidenceQuote는 빈 문자열로 남기세요. 근거를 인용할 수 없는 기준에 점수를 부여하는 것은 심각한 채점 오류입니다. (단, 규칙 5에 따라 표현이 다를 뿐 같은 의미의 문장이 답안에 있다면 이는 "근거가 있는" 경우이지 "근거가 없는" 경우가 아닙니다.)
 13. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.`
 
-    const userPrompt = `
+/** 물음마다 공통으로 필요한 문제 배경(제목·배점·사실관계·쟁점) 블록. 물음 개수만큼 반복 전송된다. */
+function buildFixedOverhead(problem: ProblemWithDetails): string {
+    return `
 ## 문제 정보
 제목: ${problem.title}
 총 배점: ${problem.total_score}점
@@ -441,61 +398,102 @@ ${problem.case_text_compact || problem.case_text_full || '(사실관계 없음)'
 
 ### 쟁점
 ${problem.issue_text_compact || problem.issue_text_full || '(쟁점 없음)'}
-
-${subquestionPrompts.join('\n---\n')}
 `
+}
 
-    // 1차 호출과 보정 재시도가 동일한 스키마를 쓰도록 지역 상수로 추출 (drift 방지)
+/** 물음 하나의 프롬프트 블록(문제·루브릭·답안). */
+function buildSubquestionBlock(
+    sq: ProblemWithDetails['cta_subquestion'][number],
+    answerText: string | undefined
+): string {
+    const rubrics = sq.cta_subquestion_rubric
+        .sort((a, b) => a.display_order - b.display_order)
+        .map((r) => {
+            // 채점 정확도를 위해 기준 설명은 전문(full)을 우선 사용 (compact는 정보 손실로 오채점 유발)
+            const desc = r.description_display || r.description_compact
+            return `  - 기준명: "${r.criterion_name}" (배점: ${r.max_score}점)${desc ? `\n    설명: ${desc}` : ''}${r.example_answer_text ? `\n    모범답안: ${r.example_answer_text}` : ''}`
+        })
+        .join('\n')
+
+    return `
+### 물음 ${sq.number} (배점: ${sq.score}점)
+문제: ${sq.prompt_text_compact || sq.prompt_text_full || '(문제 텍스트 없음)'}
+
+채점 루브릭:
+${rubrics}
+
+수험생 답안:
+${answerText || '(답안 미작성)'}
+`
+}
+
+const RUBRIC_RESULT_SCHEMA = {
+    type: Type.OBJECT,
+    properties: {
+        criterionName: { type: Type.STRING, description: '루브릭 기준명' },
+        evidenceQuote: {
+            type: Type.STRING,
+            description:
+                '이 기준을 met 또는 partially_met으로 판단한 근거가 되는, 수험생 답안 원문에서 그대로(변형 없이) 가져온 인용문. ' +
+                '답안에 해당 근거가 전혀 없어 unmet으로 판단하는 경우에는 빈 문자열("")로 두세요. 답안에 없는 내용을 지어내거나 답안 전체를 그대로 복사하지 마세요.',
+        },
+        status: { type: Type.STRING, description: '기준 충족 여부 (met: 완벽 충족, partially_met: 부분 충족, unmet: 미충족)' },
+        awardedScore: { type: Type.NUMBER, description: '획득 점수' },
+        maxScore: { type: Type.NUMBER, description: '배점' },
+    },
+    propertyOrdering: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
+    required: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
+}
+
+/**
+ * 물음 하나만 채점하는 축소 스키마. 예전에는 문제 전체(모든 물음)를 하나의 응답으로 한 번에
+ * 받았으나, 이 경우 같은 물음 안의 채점 기준 판단이 "옆에 같이 채점되는 다른 물음"의 내용에
+ * 영향을 받아 met/unmet 판정이 오염되는 현상이 실측으로 확인되어(예: 무관한 다른 물음이
+ * 강한 답안이면 이 물음의 미흡한 기준까지 만점 처리) 물음 단위 독립 호출로 전환했다.
+ */
+const SUBQUESTION_SCHEMA = {
+    type: Type.OBJECT,
+    properties: {
+        number: { type: Type.NUMBER, description: '물음 번호' },
+        awardedScore: { type: Type.NUMBER, description: '획득 점수' },
+        maxScore: { type: Type.NUMBER, description: '배점' },
+        feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
+        rubricResults: { type: Type.ARRAY, items: RUBRIC_RESULT_SCHEMA },
+    },
+    required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
+}
+
+/** 전체 총평 합성 전용 축소 스키마 (물음별 채점 결과가 이미 확정된 뒤, 요약 문장 하나만 생성) */
+const OVERALL_COMMENT_SCHEMA = {
+    type: Type.OBJECT,
+    properties: {
+        overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 80자 이내로 간결히 요약)' },
+    },
+    required: ['overallComment'],
+}
+
+/**
+ * 물음 하나를 독립적으로 채점합니다. 1차 호출 → 유령 근거/억눌린 근거 탐지 → (모순이 있으면)
+ * 이 물음의 대화만 재사용한 스코프 축소형 교정 재시도, 순서로 진행합니다. 다른 물음의 내용은
+ * 이 호출의 프롬프트에 전혀 포함되지 않으므로, 다물음 동시채점 교차오염이 구조적으로 발생할 수 없습니다.
+ */
+async function gradeSingleSubquestion(
+    problem: ProblemWithDetails,
+    sq: ProblemWithDetails['cta_subquestion'][number],
+    answerText: string | undefined
+): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[] } }> {
+    const answers: SubquestionAnswer[] = [{ subquestionNumber: sq.number, answerText: answerText || '' }]
+    const userPrompt = buildFixedOverhead(problem) + buildSubquestionBlock(sq, answerText)
+
     const config = {
         systemInstruction: systemPrompt,
         responseMimeType: 'application/json' as const,
         temperature: 0,
         // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
         thinkingConfig: { thinkingBudget: 1024 },
-        responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                totalScore: { type: Type.NUMBER, description: '수험생 총 획득 점수' },
-                subquestions: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            number: { type: Type.NUMBER, description: '물음 번호' },
-                            awardedScore: { type: Type.NUMBER, description: '획득 점수' },
-                            maxScore: { type: Type.NUMBER, description: '배점' },
-                            feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
-                            rubricResults: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        criterionName: { type: Type.STRING, description: '루브릭 기준명' },
-                                        evidenceQuote: {
-                                            type: Type.STRING,
-                                            description:
-                                                '이 기준을 met 또는 partially_met으로 판단한 근거가 되는, 수험생 답안 원문에서 그대로(변형 없이) 가져온 인용문. ' +
-                                                '답안에 해당 근거가 전혀 없어 unmet으로 판단하는 경우에는 빈 문자열("")로 두세요. 답안에 없는 내용을 지어내거나 답안 전체를 그대로 복사하지 마세요.',
-                                        },
-                                        status: { type: Type.STRING, description: '기준 충족 여부 (met: 완벽 충족, partially_met: 부분 충족, unmet: 미충족)' },
-                                        awardedScore: { type: Type.NUMBER, description: '획득 점수' },
-                                        maxScore: { type: Type.NUMBER, description: '배점' },
-                                    },
-                                    propertyOrdering: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
-                                    required: ['criterionName', 'evidenceQuote', 'status', 'awardedScore', 'maxScore'],
-                                },
-                            },
-                        },
-                        required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
-                    },
-                },
-                overallComment: { type: Type.STRING, description: '전체 총평 (공백 포함 80자 이내로 간결히 요약)' },
-            },
-            required: ['totalScore', 'subquestions', 'overallComment'],
-        },
+        responseSchema: SUBQUESTION_SCHEMA,
     }
 
-    // ── 1차 Gemini 호출 (구조화 출력, 일시 오류 시 지수 백오프 재시도) ──
     const response = await generateContentWithRetry({
         model: 'gemini-2.5-flash-lite',
         contents: userPrompt,
@@ -504,70 +502,146 @@ ${subquestionPrompts.join('\n---\n')}
 
     const text = response.text
     if (!text) {
-        throw new Error('Gemini 응답이 비어 있습니다.')
+        throw new Error(`Gemini 응답이 비어 있습니다. (물음 ${sq.number})`)
     }
 
-    const parsed = JSON.parse(text) as ParsedGradeResult
+    // 모델이 스스로 되돌려주는 number 필드는 신뢰하지 않는다(실측: 단독 호출에서 1.23 같은
+    // 값을 반환한 사례 확인). 어차피 이 호출이 어느 물음을 채점 중인지는 이미 알고 있으므로
+    // 항상 실제 sq.number로 덮어써 하류(정규화·근거 검증)가 잘못된 번호로 어긋나지 않게 한다.
+    const parsedSubquestion = { ...(JSON.parse(text) as SubquestionResult), number: sq.number }
+    let normalized = normalizeScoresAgainstRubrics(
+        { subquestions: [parsedSubquestion], totalScore: 0, overallComment: '' },
+        problem
+    )
 
-    // 버그 2(산술 불일치) 수정: 배점 출처를 DB로 교정하고 합산을 재계산 — 항상 적용
-    let normalized = normalizeScoresAgainstRubrics(parsed, problem)
-
-    // 버그 1(유령 근거) + 대칭 케이스(근거는 있는데 unmet으로 억눌림, 주로 다물음 동시채점 시 발생) 탐지 및 교정
     const contradictions = [...findPhantomEvidence(normalized, answers), ...findSuppressedEvidence(normalized, answers)]
-    let diagnostics: GradeResponse['_diagnostics'] | undefined
+    if (contradictions.length === 0) {
+        return { subquestion: normalized.subquestions[0] }
+    }
 
-    if (contradictions.length > 0) {
-        const describe = (cs: Contradiction[]) => cs.map((c) => `물음 ${c.subquestionNumber} - ${c.criterionName} (${c.reason})`)
-        try {
-            // 스코프 축소형 교정 재시도: 전체 JSON을 다시 생성시키지 않고, 모순이 발견된
-            // 기준만 재판정받아 코드에서 병합합니다 — 무관한 물음에 대한 부수 피해를 원천 차단합니다.
-            const correctionResponse = await generateContentWithRetry({
-                model: 'gemini-2.5-flash-lite',
-                contents: [
-                    { role: 'user', parts: [{ text: userPrompt }] },
-                    { role: 'model', parts: [{ text }] },
-                    { role: 'user', parts: [{ text: buildCorrectionRequest(contradictions) }] },
-                ],
-                config: {
-                    systemInstruction: systemPrompt,
-                    responseMimeType: 'application/json' as const,
-                    temperature: 0,
-                    thinkingConfig: { thinkingBudget: 1024 },
-                    responseSchema: CORRECTION_SCHEMA,
-                },
-            })
-            const correctionText = correctionResponse.text
-            if (!correctionText) throw new Error('교정 재시도 응답이 비어 있습니다.')
+    const describe = (cs: Contradiction[]) => cs.map((c) => `물음 ${c.subquestionNumber} - ${c.criterionName} (${c.reason})`)
+    try {
+        // 스코프 축소형 교정 재시도: 이 물음의 1차 대화만 재사용해, 모순이 발견된 기준만 재판정받고
+        // 코드에서 병합합니다 — 다른 물음은 애초에 이 대화에 포함된 적이 없습니다.
+        const correctionResponse = await generateContentWithRetry({
+            model: 'gemini-2.5-flash-lite',
+            contents: [
+                { role: 'user', parts: [{ text: userPrompt }] },
+                { role: 'model', parts: [{ text }] },
+                { role: 'user', parts: [{ text: buildCorrectionRequest(contradictions) }] },
+            ],
+            config: {
+                systemInstruction: systemPrompt,
+                responseMimeType: 'application/json' as const,
+                temperature: 0,
+                thinkingConfig: { thinkingBudget: 1024 },
+                responseSchema: CORRECTION_SCHEMA,
+            },
+        })
+        const correctionText = correctionResponse.text
+        if (!correctionText) throw new Error('교정 재시도 응답이 비어 있습니다.')
 
-            const { corrections } = JSON.parse(correctionText) as { corrections: Correction[] }
-            let patched = normalizeScoresAgainstRubrics(
-                applyCorrections(normalized, contradictions, corrections),
-                problem
-            )
-            const remaining = [...findPhantomEvidence(patched, answers), ...findSuppressedEvidence(patched, answers)]
+        const { corrections } = JSON.parse(correctionText) as { corrections: Correction[] }
+        let patched = normalizeScoresAgainstRubrics(
+            applyCorrections(normalized, contradictions, corrections),
+            problem
+        )
+        const remaining = [...findPhantomEvidence(patched, answers), ...findSuppressedEvidence(patched, answers)]
 
-            if (remaining.length > 0) {
-                console.warn('[grading] 유령 근거 교정 재시도 후에도 모순 잔존, 강제 0점 처리:', remaining)
-                patched = normalizeScoresAgainstRubrics(forceZeroOutContradictions(patched, remaining), problem)
-            }
-            normalized = patched
-            diagnostics = {
-                retried: true,
-                contradictions: describe(remaining.length > 0 ? remaining : contradictions),
-            }
-        } catch (err) {
-            console.warn('[grading] 유령 근거 교정 재시도 실패, 원본 결과에서 강제 0점 처리:', err, contradictions)
-            normalized = normalizeScoresAgainstRubrics(forceZeroOutContradictions(normalized, contradictions), problem)
-            diagnostics = { retried: false, contradictions: describe(contradictions) }
+        if (remaining.length > 0) {
+            console.warn(`[grading] 물음 ${sq.number} 유령 근거 교정 재시도 후에도 모순 잔존, 강제 0점 처리:`, remaining)
+            patched = normalizeScoresAgainstRubrics(forceZeroOutContradictions(patched, remaining), problem)
+        }
+        normalized = patched
+        return {
+            subquestion: normalized.subquestions[0],
+            diagnostics: { retried: true, contradictions: describe(remaining.length > 0 ? remaining : contradictions) },
+        }
+    } catch (err) {
+        console.warn(`[grading] 물음 ${sq.number} 유령 근거 교정 재시도 실패, 원본 결과에서 강제 0점 처리:`, err, contradictions)
+        normalized = normalizeScoresAgainstRubrics(forceZeroOutContradictions(normalized, contradictions), problem)
+        return {
+            subquestion: normalized.subquestions[0],
+            diagnostics: { retried: false, contradictions: describe(contradictions) },
         }
     }
+}
+
+/**
+ * 모든 물음의 채점이 끝난 뒤, 물음별 점수·피드백만 가지고 전체 총평 한 문장을 합성합니다.
+ * 원본 답안·루브릭 전문을 다시 보내지 않아 저렴합니다(물음 개수와 무관하게 항상 1회 호출).
+ */
+async function synthesizeOverallComment(
+    problem: ProblemWithDetails,
+    subquestions: SubquestionResult[],
+    totalScore: number
+): Promise<string> {
+    const summary = subquestions
+        .map((sq) => `물음 ${sq.number}: ${sq.awardedScore}/${sq.maxScore}점 — ${sq.feedback}`)
+        .join('\n')
+
+    const prompt = `다음은 "${problem.title}" 문제(총 배점 ${problem.total_score}점)에 대한 물음별 채점 결과입니다.
+${summary}
+
+총점: ${totalScore}/${problem.total_score}점
+
+위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 잘한 점과 부족한 점을 균형 있게 반영하세요.`
+
+    const response = await generateContentWithRetry({
+        model: 'gemini-2.5-flash-lite',
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json' as const,
+            temperature: 0,
+            responseSchema: OVERALL_COMMENT_SCHEMA,
+        },
+    })
+
+    const text = response.text
+    if (!text) return '채점이 완료되었습니다.'
+
+    const { overallComment } = JSON.parse(text) as { overallComment: string }
+    return overallComment || '채점이 완료되었습니다.'
+}
+
+/**
+ * Gemini 2.5 Flash-Lite를 호출하여 구조화된 JSON 채점 결과를 반환합니다.
+ * 물음마다 독립된 호출로 병렬 채점한 뒤(다물음 동시채점 교차오염 방지), 총평만 별도로 합성합니다.
+ */
+export async function gradeProblem(
+    problem: ProblemWithDetails,
+    answers: SubquestionAnswer[]
+): Promise<GradeResponse> {
+    const results = await Promise.all(
+        problem.cta_subquestion.map((sq) => {
+            const answer = answers.find((a) => a.subquestionNumber === sq.number)
+            return gradeSingleSubquestion(problem, sq, answer?.answerText)
+        })
+    )
+
+    // 버그 2(산술 불일치) 수정: 배점 출처를 DB로 교정하고 물음 간 합산(총점)을 재계산 — 항상 적용
+    const normalizedAll = normalizeScoresAgainstRubrics(
+        { subquestions: results.map((r) => r.subquestion), totalScore: 0, overallComment: '' },
+        problem
+    )
+
+    const overallComment = await synthesizeOverallComment(problem, normalizedAll.subquestions, normalizedAll.totalScore)
+
+    const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[] } => !!d)
+    const diagnostics: GradeResponse['_diagnostics'] | undefined =
+        diagnosticsList.length > 0
+            ? {
+                retried: diagnosticsList.some((d) => d.retried),
+                contradictions: diagnosticsList.flatMap((d) => d.contradictions),
+            }
+            : undefined
 
     return {
         problemId: problem.id,
         maxScore: problem.total_score,
-        totalScore: normalized.totalScore,
-        subquestions: normalized.subquestions,
-        overallComment: normalized.overallComment,
+        totalScore: normalizedAll.totalScore,
+        subquestions: normalizedAll.subquestions,
+        overallComment,
         ...(diagnostics ? { _diagnostics: diagnostics } : {}),
     }
 }
