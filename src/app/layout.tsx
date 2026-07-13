@@ -35,6 +35,9 @@ export default async function RootLayout({
             </a>
             {user ? (
               <>
+                <Link href="/mypage" className="btn btn-ghost btn-sm">
+                  마이페이지
+                </Link>
                 <span className="navbar-user">{(user as Record<string, unknown>).email as string}</span>
                 <form action="/auth/signout" method="post">
                   <button type="submit" className="btn btn-ghost btn-sm">
