@@ -14,9 +14,14 @@
  *       0점도 만점도 아닌 진짜 부분 점수로 채점되는지, 그 여파로 같은 물음의 무관한 다른
  *       루브릭까지 덩달아 깎이지 않는지 (partial) — half가 "루브릭 단위"의 이진(포함/누락)
  *       비례성을 본다면, partial은 "루브릭 하나 내부" 요건 일부 충족의 세분화된 점수 부여를 본다
- *   (7) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
- *   (8) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
- *   (9) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
+ *   (7) 물음 하나를 여러 루브릭에 걸친 내용을 마침표로 끊지 않고 쉼표·연결어미로만 이어 붙인
+ *       하나의 긴 문장으로 답했을 때, 문장 경계가 사라져도 각 루브릭의 근거를 놓치거나 엉뚱한
+ *       루브릭에 잘못 귀속시키지 않고 개별적으로 정확히 채점하는지 (merged) — 내용은
+ *       STRONG과 동일하고 오직 문장 구조(sentence segmentation)만 다르다는 점에서 다른
+ *       모드들과 구분된다
+ *   (8) [공통, 모든 모드] 답안에 실존하는 표현을 "누락"으로 지적하는 허위 감점이 없는지
+ *   (9) [공통, 모든 모드] 응답 내부 산술이 일관적인지: Σ루브릭점수===물음점수, Σ물음점수===총점
+ *   (10) [공통, 모든 모드] met/partially_met + 0점 초과 루브릭마다 evidenceQuote가 답안에 실존하는지
  *       (유령 근거/점수 부풀림 탐지 — gradeProblem.ts 내부 함수를 재사용하지 않고 독립 재구현)
  *
  * 허위 누락 탐지는 특정 단어 하드코딩이 아니라, 피드백의 "'X' 누락/언급 없음" 패턴에서
@@ -41,6 +46,9 @@
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --partial             # 문제1 루브릭 내 부분충족
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --partial
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --partial
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --merged              # 문제1 한 문장 압축 답안
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --merged
+ *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --merged
  */
 import { gradeProblem } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
@@ -348,6 +356,19 @@ const PARTIAL_TARGETS: { subquestionNumber: number; criterionName: string }[] = 
     { subquestionNumber: 3, criterionName: '판례 법리' },
 ]
 
+// ── 한 문장 답안: STRONG_ANSWERS와 논리·내용은 완전히 동일하되, 물음마다 여러 루브릭에 걸친
+//    서술을 마침표로 끊지 않고 쉼표·연결어미("~하고", "~하며", "~는데")로만 이어 하나의 긴
+//    문장으로 압축함 — 문장 경계가 사라져도 그레이더가 각 루브릭의 근거를 놓치거나 엉뚱한
+//    루브릭에 잘못 귀속시키지 않고 개별적으로 정확히 채점하는지 확인 ──
+const MERGED_ANSWERS: Record<number, string> = {
+    1:
+        '재산 취득 후 재산가치 증가에 따른 이익의 증여로 과세되려면, 첫째로 수증자 및 취득사유 요건으로서 직업·연령·소득 및 재산상태로 보아 자신의 계산과 자력으로 해당 행위를 할 수 없다고 인정되는 자(미성년자 등)가 특수관계인으로부터 재산을 증여받거나 특수관계인으로부터 공표되지 아니한 내부정보를 제공받아 관련 재산을 유상으로 취득하거나 특수관계인으로부터 증여·차입한 자금으로 재산을 취득하여야 하고, 둘째로 재산가치 증가사유 발생 요건으로서 그 재산을 취득한 날부터 5년 이내에 개발사업의 시행, 형질변경, 공유물 분할, 사업의 인가·허가, 비상장주식의 K-OTC 등록, 코넥스시장 상장 등 법정 재산가치 증가사유가 발생하여야 하며, 셋째로 기준금액 이상의 이익 획득 요건으로서 그로 인해 얻은 재산가치상승금액이 3억 원 이상이거나 취득가액과 통상적인 가치상승분 및 가치상승기여분 합계액의 30% 이상이어야 한다.',
+    2:
+        '석유화학공장 완공을 개발사업의 시행으로 본 과세관청의 처분은 위법한데, 그 이유는 대법원이 재산가치증가사유인 개발사업의 시행을 적어도 개발구역의 지정·고시가 수반되어 토지를 개발하고 그 토지가치를 증가시키는 사업으로 엄격하게 해석하는 한편, 사안에서 (주)A가 토지개발과 무관하게 단순히 소유하던 일반 부지 위에 석유화학공장을 완공하고 제품 생산을 개시한 사정만으로는 법령이 예정한 개발사업의 시행에 해당한다고 볼 수 없기 때문이다.',
+    3:
+        '간접적 이익은 과세할 수 없다는 甲의 주장은 타당하지 않은데, 대법원은 조세회피 방지라는 입법취지를 고려할 때 재산가치증가사유의 직접적 대상인 재산(토지)과 수증자가 취득한 재산(주식)이 반드시 동일할 필요는 없다고 보아 개발사업 등으로 법인의 재산가치가 상승하고 그에 따라 주주가 보유주식의 가치상승 이익을 얻었으며 두 사실 사이에 실질적 인과관계가 인정된다면 주주가 얻은 간접적 경제적 이익도 과세대상에 포함된다고 판시하였고, 사안에서도 (주)A 소유 토지가 신도시 개발구역으로 지정되어 개발사업이 시행됨으로써 (주)A의 기업가치가 상승하였고 그 결과 甲의 주식가치가 폭등하였으므로 명확한 인과관계가 인정되어, 재산이 동일하지 않다는 형식적 이유만으로 과세를 부정할 수 없으므로 甲의 주장은 타당하지 않다.',
+}
+
 // ── 문제 9 데이터: cta_uploader/data/problem_9.json + upload_cta.py 변환 로직과 동일
 //    (id 체계: subquestion.id = {problem_id}{number}, rubric.id = {subquestion_id}{rubric_index};
 //     case_text_full/compact는 원본 배열을 " "로 join한 값이 실제 DB 저장값) ──
@@ -581,6 +602,14 @@ const PARTIAL_TARGETS_9: { subquestionNumber: number; criterionName: string }[] 
 const PARTIAL_TARGET_9: { subquestionNumber: number; criterionName: string } = {
     subquestionNumber: 1,
     criterionName: '공급가액 산정방법',
+}
+
+// ── 한 문장 답안: STRONG_ANSWERS_9와 논리·내용은 동일하되 마침표로 끊지 않고 한 문장으로 압축
+const MERGED_ANSWERS_9: Record<number, string> = {
+    1:
+        '면세전용 과세는 매입세액을 공제받은 자와 처음부터 면세사업용으로 사들여 공제받지 못한 자 사이의 과세형평을 유지하기 위한 것이며 부가가치세 부담이 없는 소비를 방지하기 위한 제도인데, 화물트럭과 같은 감가상각자산을 면세전용하는 경우의 과세표준은 당초 취득가액을 기준으로 경과된 과세기간 수에 따른 체감률(상각률)을 반영하여 산출한 간주공급가액으로 한다.',
+    2:
+        '공통매입세액의 재계산이 적용되려면 당초 공통매입세액을 안분계산하여 매입세액을 공제받은 자산이어야 하고 해당 자산이 감가상각자산이어야 하며 당초 안분계산 시의 면세비율과 재계산하는 과세기간의 면세비율 차이가 5% 이상 증감하여야 하는데, 이러한 재계산은 예정신고 시에는 하지 아니하고 해당 과세기간의 확정신고 시에만 하되, 다만 공통사용 감가상각자산을 타인에게 매각하는 등 재화의 공급에 해당하는 경우나 그 자산이 멸실되거나 폐기된 경우에는 예외적으로 재계산이 배제된다.',
 }
 
 // ── 문제 46 데이터: cta_uploader/data/problem_46.json과 동일
@@ -832,6 +861,16 @@ const PARTIAL_TARGETS_46: { subquestionNumber: number; criterionName: string }[]
     { subquestionNumber: 3, criterionName: '감면기간 및 감면비율' },
 ]
 
+// ── 한 문장 답안: STRONG_ANSWERS_46과 논리·내용은 동일하되 마침표로 끊지 않고 한 문장으로 압축
+const MERGED_ANSWERS_46: Record<number, string> = {
+    1:
+        '중소기업의 공장이전에 대한 과세특례를 적용받기 위해서는 2년 이상 계속하여 공장시설을 갖추고 사업을 영위한 중소기업이 수도권과밀억제권역 밖의 지역으로 공장을 이전하여야 하고 선이전 후양도 기준에 따라 신규 공장을 취득하여 사업을 개시한 날로부터 2년 이내에 기존 공장을 양도하여야 하는데, 2013년부터 계속하여 수도권과밀억제권역 밖인 청주시에서 2년 이상 공장을 운영해오다가 2025년 4월 역시 수도권과밀억제권역 밖인 목포시로 신규 공장을 준공·이전한 후 2026년 2월에 기존 청주 공장을 양도한 (주)새롬은 위 요건을 형식적으로 충족함에도, 과세관청이 과세이연 특례 적용을 부인한 처분은 위법한데, 이는 조세법률주의 원칙상 과세요건뿐 아니라 조세감면 요건도 법문대로 엄격하게 해석하여야 하므로 법령에 명시되지 않은 기존 공장이 수도권과밀억제권역 안에 소재하여야 한다는 요건을 자의적으로 추가하여 이 사건과 같이 수도권 밖에서 수도권 밖으로 이전한 경우를 축소·유추해석으로 특례 대상에서 배제하는 것은 허용되지 않기 때문이다.',
+    2:
+        '법인 본사 지방이전에 따른 세액감면을 적용받기 위해서는 첫째로 기존 본사 요건으로서 수도권과밀억제권역에 3년 이상 계속하여 본사 또는 주사무소를 두고 있던 법인이어야 하고, 둘째로 업종 요건으로서 부동산업, 건설업, 소비성서비스업 등 세법에서 정한 제외 업종에 해당하지 아니하여야 하며, 셋째로 투자 및 근무인원 요건으로서 이전한 본사에 10억 원 이상을 투자하고 이전 본사에서 근무하는 인원이 20명 이상이어야 한다.',
+    3:
+        '(주)새롬은 본사 지방이전에 따른 법인세 감면으로 이전 후 최초로 소득이 발생한 과세연도와 그 다음 4년을 합한 5년간은 법인세의 100%를 감면받고 그 후 3년간은 법인세의 50%를 감면받는 한편, 감면이 적용되는 감면대상 소득비율은 이전본사 근무인원 수를 법인 전체 근무인원 수로 나눈 비율로 산정하므로 전체 임직원 60명 중 이전 본사에서 근무하는 인원이 40명인 사안에서는 감면대상 소득비율이 40/60, 즉 약 66.6%(또는 2/3)가 된다.',
+}
+
 export interface ProblemFixture {
     problem: ProblemWithDetails
     label: string
@@ -843,6 +882,7 @@ export interface ProblemFixture {
     overgeneralizedAnswers?: Record<number, string>
     partialAnswers?: Record<number, string>
     partialTargets?: { subquestionNumber: number; criterionName: string }[]
+    mergedAnswers?: Record<number, string>
 }
 
 export const PROBLEM1_FIXTURE: ProblemFixture = {
@@ -856,6 +896,7 @@ export const PROBLEM1_FIXTURE: ProblemFixture = {
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS,
     partialAnswers: PARTIAL_ANSWERS,
     partialTargets: PARTIAL_TARGETS,
+    mergedAnswers: MERGED_ANSWERS,
 }
 
 export const PROBLEM9_FIXTURE: ProblemFixture = {
@@ -869,6 +910,7 @@ export const PROBLEM9_FIXTURE: ProblemFixture = {
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_9,
     partialAnswers: PARTIAL_ANSWERS_9,
     partialTargets: PARTIAL_TARGETS_9,
+    mergedAnswers: MERGED_ANSWERS_9,
 }
 
 export const PROBLEM46_FIXTURE: ProblemFixture = {
@@ -882,9 +924,10 @@ export const PROBLEM46_FIXTURE: ProblemFixture = {
     overgeneralizedAnswers: OVERGENERALIZED_ANSWERS_46,
     partialAnswers: PARTIAL_ANSWERS_46,
     partialTargets: PARTIAL_TARGETS_46,
+    mergedAnswers: MERGED_ANSWERS_46,
 }
 
-type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized' | 'partial'
+type Mode = 'strong' | 'incomplete' | 'half' | 'ambiguous' | 'overgeneralized' | 'partial' | 'merged'
 
 function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] {
     const src =
@@ -898,7 +941,9 @@ function buildAnswers(fixture: ProblemFixture, mode: Mode): SubquestionAnswer[] 
                         ? fixture.overgeneralizedAnswers
                         : mode === 'partial'
                             ? fixture.partialAnswers
-                            : fixture.strongAnswers
+                            : mode === 'merged'
+                                ? fixture.mergedAnswers
+                                : fixture.strongAnswers
     if (!src) {
         throw new Error(`${fixture.label}은(는) --${mode} 모드를 지원하지 않습니다.`)
     }
@@ -948,7 +993,9 @@ async function main() {
                     ? 'overgeneralized'
                     : process.argv.includes('--partial')
                         ? 'partial'
-                        : 'strong'
+                        : process.argv.includes('--merged')
+                            ? 'merged'
+                            : 'strong'
     const modeLabel =
         mode === 'half'
             ? '절반 답안(비례성 확인)'
@@ -960,7 +1007,9 @@ async function main() {
                         ? '일반화된 오답(논리는 틀렸지만 자신감 있는 답안)'
                         : mode === 'partial'
                             ? '부분충족(단일 루브릭 내 요건 일부만 충족)'
-                            : '재현(충실한 답안)'
+                            : mode === 'merged'
+                                ? '한 문장 답안(여러 루브릭을 문장 경계 없이 압축)'
+                                : '재현(충실한 답안)'
     console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
 
     const answers = buildAnswers(fixture, mode)
@@ -1143,6 +1192,28 @@ async function main() {
         checks.push({
             name: `총점 감점이 대상 루브릭들의 배점 합(${targetMaxScoreSum}점) 범위 내로 국한됨 (${result.totalScore}/${result.maxScore})`,
             pass: result.totalScore > result.maxScore - targetMaxScoreSum && result.totalScore < result.maxScore,
+        })
+    } else if (mode === 'merged') {
+        // STRONG_ANSWERS와 논리·내용은 완전히 동일하되 물음마다 여러 루브릭에 걸친 서술을
+        // 마침표로 끊지 않고 쉼표·연결어미로만 이어 하나의 긴 문장으로 압축한 답안 —
+        // 총점만이 아니라 물음당 2~3개씩 걸린 개별 루브릭 각각이 문장 경계 소실에도
+        // 정상적으로(고득점) 채점되는지를 루브릭 단위로 하나하나 확인한다
+        for (const sq of result.subquestions) {
+            for (const rr of sq.rubricResults) {
+                const ratio = rr.maxScore > 0 ? rr.awardedScore / rr.maxScore : 0
+                checks.push({
+                    name: `물음 ${sq.number} "${rr.criterionName}" 한 문장 안에 있어도 정상 채점 (${rr.awardedScore}/${rr.maxScore})`,
+                    pass: ratio >= 0.8,
+                })
+            }
+        }
+        checks.push({
+            name: `한 문장 답안 총점이 만점의 84% 이상 (${result.totalScore}/${result.maxScore})`,
+            pass: result.totalScore >= result.maxScore * 0.84,
+        })
+        checks.push({
+            name: '답안에 실존하는 표현을 누락으로 지적한 허위 감점 없음',
+            pass: falseOmissionsAll.length === 0,
         })
     } else {
         checks.push({

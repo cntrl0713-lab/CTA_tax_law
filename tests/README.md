@@ -47,6 +47,9 @@ npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --overgener
 npx -y tsx --env-file=.env.local tests/verify-grading.ts --partial             # 문제1 루브릭 내 부분충족
 npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --partial
 npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --partial
+npx -y tsx --env-file=.env.local tests/verify-grading.ts --merged              # 문제1 한 문장 압축 답안
+npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --merged
+npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --merged
 ```
 
 모드별로 하는 일:
@@ -59,8 +62,11 @@ npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --partial
 | `--ambiguous` | STRONG과 논리·내용은 동일하지만 정확한 법률 용어 대신 구어체로 에둘러 쓰고 결론도 완곡하게 표현한 답안 | 정확한 키워드가 없다는 이유만으로 루브릭이 부당하게 0점(unmet) 처리되지 않는지, 총점이 만점의 60% 이상 유지되는지 |
 | `--overgeneralized` | 막연하거나 자신 없는 게 아니라, 자신감 있는 어조로 그럴듯한 일반 원칙을 내세우되 이 사안의 구체적 요건·예외를 무시하거나 뒤집어서 결론 자체가 틀린 답안 | 권위 있어 보이는 말투·법률 용어에 속아 관대하게 채점되지 않는지 (총점 <40%, `--incomplete`의 60%보다 더 엄격한 기준) |
 | `--partial` | STRONG과 동일하되, 각 물음마다 여러 요건을 담은 루브릭 하나씩을 골라 그중 한 요건을 통째로 빼고 서술 (같은 물음의 다른 루브릭은 STRONG 그대로) | 그 루브릭들이 각각 `status===partially_met`이면서 0점도 만점도 아닌 진짜 부분 점수를 받는지, 같은 물음의 무관한 다른 루브릭까지 덩달아 깎이지 않는지 (루브릭 **내부** 요건 일부 충족 — `--half`의 세분화 버전) |
+| `--merged` | STRONG과 논리·내용은 완전히 동일하되, 물음마다 여러 루브릭에 걸친 서술을 마침표로 끊지 않고 쉼표·연결어미("~하고", "~하며", "~는데")로만 이어 하나의 긴 문장으로 압축 | 문장 경계가 사라져도 각 루브릭의 근거를 놓치거나 엉뚱한 루브릭에 잘못 귀속시키지 않고 물음당 2~6개 루브릭 각각을 개별적으로 정확히 채점하는지(각 루브릭 ≥80%, 총점 ≥84%) — 다른 모드가 답안의 "내용"을 바꾸는 것과 달리 이 모드는 오직 "문장 구조"만 바꾼다 |
 
 `--half`는 세 문제 모두에서 검증한다: 문제1(물음당 루브릭 2~3개 중 일부만 채움), 문제9(물음1은 "취지" 2개만 채우고 "산정방법"은 비움, 물음2는 6개 중 앞 3개인 "요건"만 채우고 "시기"·"배제사유" 3개는 비움), 문제46(물음마다 뒤/가운데/앞 루브릭을 번갈아 비워 위치 편향 없이 검증). 세 문제 모두 총점이 만점의 30~65%(대략 절반) 범위에 들어와야 통과 — 실제 실행 결과 문제1 12/25(48%), 문제9 10/20(50%), 문제46 14/25(56%)로 전부 통과했다.
+
+`--merged`도 세 문제 모두에서 검증했다 — 세 문제 모두 만점(문제1 25/25, 문제9 20/20, 문제46 25/25), 물음 2개 루브릭부터 문제9 물음2의 6개 루브릭까지 전부 개별 만점, evidenceQuote도 각 clause 경계에 맞춰 정확히 분리 인용됨. 문장 부호로 답을 구획하지 않는 학생 답안(예: 개조식 없이 줄글로 몰아 쓰는 경우)에도 채점기가 흔들리지 않는다는 근거.
 
 `--partial`은 각 문제의 **모든 물음**에서 하나씩(문제1: 물음1·2·3, 문제9: 물음1·2, 문제46: 물음1·2·3 — 총 8개 대상 루브릭) 검증한다. 최초 도입 시(문제 전체를 한 번에 채점하던 구버전 `gradeProblem.ts`) 8개 중 3개가 요건이 통째로 빠졌는데도 `met`+만점으로 FAIL했다. 원인을 일회성 진단 스크립트(해당 물음 하나만 떼어낸 미니 문제로 단독 채점 후 묶음 채점 결과와 대조, 이제는 삭제됨)로 추적한 결과 두 가지 다른 원인이 섞여 있었다:
 
