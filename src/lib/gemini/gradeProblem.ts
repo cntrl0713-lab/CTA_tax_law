@@ -6,7 +6,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
 // 일시적 서버 오류(용량 초과·내부 오류 등)에 재시도할 HTTP 상태 코드
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
-const MAX_RETRIES = 4
+const MAX_RETRIES = 6
 
 /**
  * Gemini 호출을 감싸 일시적 오류(503 등)에 지수 백오프로 재시도합니다.
@@ -19,11 +19,26 @@ async function generateContentWithRetry(
         try {
             return await ai.models.generateContent(params)
         } catch (err) {
-            const status = (err as { status?: number })?.status
+            const e = err as { status?: number; retryDelay?: number | string; response?: { headers?: Record<string, string> } }
+            const status = e?.status
             const retryable = status !== undefined && RETRYABLE_STATUS.has(status)
             if (!retryable || attempt >= MAX_RETRIES) throw err
-            // 0.5s → 1s → 2s → 4s + 지터(최대 250ms)
-            const backoff = 500 * 2 ** attempt + Math.floor(Math.random() * 250)
+
+            // 0.5s → 1s → 2s → 4s ... 기준값 최대 15000ms + 전체 지터(0~기준값 랜덤)로
+            // 병렬 호출들의 재시도 시점이 같은 순간에 몰리지 않게 분산
+            const baseBackoff = Math.min(500 * (2 ** attempt), 15000)
+            let backoff = Math.floor(Math.random() * baseBackoff)
+
+            // 서버가 대기 시간을 지정하면 우선 적용 — Retry-After 헤더와 retryDelay("32s" 형태) 모두 초 단위
+            const retryDelay = e?.response?.headers?.['retry-after'] ?? e?.retryDelay
+            if (retryDelay !== undefined) {
+                const seconds = typeof retryDelay === 'number' ? retryDelay : parseInt(retryDelay, 10)
+                const delayMs = Math.min(seconds * 1000, 30000)
+                if (!isNaN(delayMs) && delayMs > backoff) {
+                    backoff = delayMs
+                }
+            }
+
             console.warn(
                 `[grading] Gemini ${status} 오류, ${backoff}ms 후 재시도 (${attempt + 1}/${MAX_RETRIES})`
             )
@@ -612,12 +627,47 @@ export async function gradeProblem(
     problem: ProblemWithDetails,
     answers: SubquestionAnswer[]
 ): Promise<GradeResponse> {
-    const results = await Promise.all(
+    const settledResults = await Promise.allSettled(
         problem.cta_subquestion.map((sq) => {
             const answer = answers.find((a) => a.subquestionNumber === sq.number)
             return gradeSingleSubquestion(problem, sq, answer?.answerText)
         })
     )
+
+    const results: Array<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[] } }> = []
+    const failedIndices: number[] = []
+
+    settledResults.forEach((res, idx) => {
+        if (res.status === 'fulfilled') {
+            results[idx] = res.value
+        } else {
+            console.error(`[grading] 물음 ${problem.cta_subquestion[idx].number} 1차 채점 실패:`, res.reason)
+            failedIndices.push(idx)
+        }
+    })
+
+    if (failedIndices.length > 0) {
+        console.warn(`[grading] 실패한 물음 ${failedIndices.length}개에 대해 쿨다운 후 2차 재시도 진행`)
+        await new Promise((resolve) => setTimeout(resolve, 3000 + Math.random() * 2000)) // 3~5초 쿨다운
+
+        const retrySettled = await Promise.allSettled(
+            failedIndices.map(async (idx) => {
+                const sq = problem.cta_subquestion[idx]
+                const answer = answers.find((a) => a.subquestionNumber === sq.number)
+                return { idx, value: await gradeSingleSubquestion(problem, sq, answer?.answerText) }
+            })
+        )
+
+        for (const res of retrySettled) {
+            if (res.status === 'fulfilled') {
+                results[res.value.idx] = res.value.value
+            } else {
+                console.error(`[grading] 물음 2차 채점 재시도 최종 실패:`, res.reason)
+                // 원본 오류를 그대로 던져 상태코드(503/429 등)를 보존 — API 라우트가 이를 보고 안내 문구를 분기
+                throw res.reason
+            }
+        }
+    }
 
     // 버그 2(산술 불일치) 수정: 배점 출처를 DB로 교정하고 물음 간 합산(총점)을 재계산 — 항상 적용
     const normalizedAll = normalizeScoresAgainstRubrics(
@@ -625,7 +675,12 @@ export async function gradeProblem(
         problem
     )
 
-    const overallComment = await synthesizeOverallComment(problem, normalizedAll.subquestions, normalizedAll.totalScore)
+    let overallComment = '채점이 완료되었습니다.'
+    try {
+        overallComment = await synthesizeOverallComment(problem, normalizedAll.subquestions, normalizedAll.totalScore)
+    } catch (err) {
+        console.warn('[grading] 총평 합성 실패, 폴백 문구 대체:', err)
+    }
 
     const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[] } => !!d)
     const diagnostics: GradeResponse['_diagnostics'] | undefined =

@@ -5,6 +5,9 @@ import { gradeProblem } from '@/lib/gemini/gradeProblem'
 import type { GradeRequest } from '@/types/grading'
 import type { ProblemWithDetails } from '@/types/db'
 
+// 채점은 물음 수만큼의 Gemini 병렬 호출 + 503 재시도(백오프 최대 수십 초)를 포함하므로 함수 타임아웃 확장 (Vercel)
+export const maxDuration = 60
+
 export async function POST(request: Request) {
     try {
         // 1. 인증 확인
@@ -155,9 +158,25 @@ export async function POST(request: Request) {
         })
     } catch (error) {
         console.error('채점 API 오류:', error)
+
+        // gradeProblem이 Gemini 원본 오류를 그대로 던지므로 상태코드로 일시 오류를 식별
+        const upstreamStatus = (error as { status?: number })?.status
+        const message = error instanceof Error ? error.message : ''
+
+        let status = 500
+        let errorMessage = '채점 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+
+        if (upstreamStatus === 503 || message.includes('503')) {
+            status = 503
+            errorMessage = 'AI 채점 서버가 일시적으로 혼잡합니다. 답안은 그대로 남아 있으니 잠시 후 다시 채점해 주세요.'
+        } else if (upstreamStatus === 429 || message.includes('429')) {
+            status = 503
+            errorMessage = '요청이 너무 많아 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.'
+        }
+
         return NextResponse.json(
-            { error: '채점 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' },
-            { status: 500 }
+            { error: errorMessage },
+            { status }
         )
     }
 }
