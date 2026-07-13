@@ -15,6 +15,7 @@ export interface Problem {
     issue_text_full: string | null
     issue_text_compact: string | null
     created_at: string | null
+    problem_type: 'case' | 'theory'
 }
 
 /** 소문항 */
@@ -110,6 +111,7 @@ export interface GradingAttempt {
         title: string
         total_score: number
         subject_id: number
+        problem_type: 'case' | 'theory'
         cta_subject?: { id: number; name: string }
     }
 }

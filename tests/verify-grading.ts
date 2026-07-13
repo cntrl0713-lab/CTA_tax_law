@@ -79,6 +79,7 @@ const problem1: ProblemWithDetails = {
     issue_text_compact:
         '과세관청은 공장 완공과 신도시 개발을 재산가치증가사유로 보아 주식가치 상승분 전체에 증여세를 부과했고, 甲은 공장 완공의 개발사업 해당성 및 토지와 주식의 비동일성을 이유로 과세에 불복하였다.',
     created_at: null,
+    problem_type: 'case',
     cta_subquestion: [
         {
             id: 11,
@@ -387,6 +388,7 @@ const problem9: ProblemWithDetails = {
     issue_text_compact:
         '화물트럭의 면세전용을 재화의 공급으로 볼 수 있는지와, 공통매입세액 재계산의 요건·배제사유가 쟁점이다.',
     created_at: null,
+    problem_type: 'case',
     cta_subquestion: [
         {
             id: 91,
@@ -631,6 +633,7 @@ const problem46: ProblemWithDetails = {
     issue_text_compact:
         '수도권 밖에서 밖으로 공장을 이전한 경우 과세특례 대상 여부 및 본사 지방이전에 따른 세액감면 요건·효과 산정의 적법성.',
     created_at: null,
+    problem_type: 'case',
     cta_subquestion: [
         {
             id: 461,

@@ -7,10 +7,14 @@ import AnswerForm from '@/components/AnswerForm'
 
 export default async function ProblemPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ problemId: string }>
+    searchParams: Promise<{ type?: string }>
 }) {
     const { problemId } = await params
+    const { type } = await searchParams
+    const fromTheory = type === 'theory'
     const supabase = createAdminClient()
 
     // 문제 + 소문항 + 루브릭 전체 조회
@@ -60,12 +64,17 @@ export default async function ProblemPage({
 
     return (
         <div className="container">
-            <Link href={`/subjects/${typedProblem.subject_id}`} className="back-link">
+            <Link href={`/subjects/${typedProblem.subject_id}${fromTheory ? '?type=theory' : ''}`} className="back-link">
                 ← {subject?.name || '문제 목록'}으로
             </Link>
 
             <div className="problem-header">
-                <h1>{typedProblem.title}</h1>
+                <h1>
+                    {typedProblem.problem_type === 'theory' && (
+                        <span className="type-badge type-badge-theory">📚 이론형</span>
+                    )}
+                    {typedProblem.title}
+                </h1>
                 <div className="meta">
                     총 배점: {typedProblem.total_score}점 · 물음 {typedProblem.cta_subquestion.length}개
                 </div>

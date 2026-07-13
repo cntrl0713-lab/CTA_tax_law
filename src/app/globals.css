@@ -286,6 +286,59 @@ h3,
   margin-bottom: 8px;
 }
 
+/* ── 유형 탭 (사례/이론) ── */
+.type-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.type-tab {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.type-tab:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.type-tab.active {
+  background: var(--text-primary);
+  color: white;
+  border-color: var(--text-primary);
+}
+
+/* ── 유형 뱃지 ── */
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.type-badge-case {
+  background: rgba(108, 92, 231, 0.1);
+  color: var(--accent-primary);
+  border: 1px solid rgba(108, 92, 231, 0.2);
+}
+
+.type-badge-theory {
+  background: rgba(93, 184, 166, 0.1);
+  color: var(--accent-secondary);
+  border: 1px solid rgba(93, 184, 166, 0.2);
+}
+
 /* ── 과목 카드 ── */
 .subject-card {
   position: relative;
@@ -1005,6 +1058,7 @@ h3,
   border-color: var(--accent-primary-hover);
   transform: translateY(-1px);
 }
+
 /* 힌트 / 정답보기 */
 .hint-action-row {
   display: flex;
@@ -1012,21 +1066,39 @@ h3,
   gap: 12px;
   margin-bottom: 16px;
 }
+
 .btn-hint {
   background: var(--bg-card);
   color: var(--accent-primary);
   border: 1px solid var(--accent-primary);
   align-self: flex-start;
 }
-.btn-hint:hover { background: rgba(204, 120, 92, 0.1); }
+
+.btn-hint:hover {
+  background: rgba(204, 120, 92, 0.1);
+}
+
 .hint-panel {
   background: var(--bg-secondary);
   border: 1px dashed var(--accent-primary);
   padding: 16px;
   border-radius: var(--radius-sm);
 }
-.hint-panel-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; color: var(--accent-primary); }
-.hint-keywords { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+
+.hint-panel-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  color: var(--accent-primary);
+}
+
+.hint-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .hint-keyword-chip {
   background: var(--bg-card);
   padding: 4px 10px;
@@ -1034,8 +1106,12 @@ h3,
   font-size: 0.85rem;
   border: 1px solid var(--border-default);
 }
+
 .hint-remaining {
-  display: block; font-size: 0.75rem; color: var(--text-muted); text-align: right;
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
 }
 
 .btn-answer-reveal {
@@ -1044,17 +1120,43 @@ h3,
   border: 1px solid var(--accent-secondary);
   align-self: flex-start;
 }
-.btn-answer-reveal:hover { background: rgba(93, 184, 166, 0.1); }
+
+.btn-answer-reveal:hover {
+  background: rgba(93, 184, 166, 0.1);
+}
+
 .answer-reveal-panel {
   background: var(--bg-secondary);
   border: 1px dashed var(--accent-secondary);
   padding: 16px;
   border-radius: var(--radius-sm);
 }
-.answer-reveal-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; color: var(--accent-secondary); }
-.answer-reveal-item { margin-bottom: 12px; }
-.answer-reveal-criterion { font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; }
-.answer-reveal-text { font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary); background: var(--bg-card); padding: 12px; border-radius: var(--radius-sm); }
+
+.answer-reveal-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  color: var(--accent-secondary);
+}
+
+.answer-reveal-item {
+  margin-bottom: 12px;
+}
+
+.answer-reveal-criterion {
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.answer-reveal-text {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+}
 
 /* 문제 단위 힌트/정답 영역 */
 .assist-area {
@@ -1063,25 +1165,44 @@ h3,
   gap: 12px;
   margin-bottom: 16px;
 }
-.assist-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.assist-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .hint-sq {
   margin-bottom: 12px;
   padding-left: 10px;
   border-left: 2px solid var(--accent-primary);
 }
+
 .hint-sq-label {
-  display: block; font-size: 0.8rem; font-weight: 600;
-  color: var(--text-secondary); margin-bottom: 6px;
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
 }
-.hint-empty { font-size: 0.85rem; color: var(--text-muted); }
+
+.hint-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .answer-sq {
   margin-bottom: 16px;
   padding-left: 10px;
   border-left: 2px solid var(--accent-secondary);
 }
+
 .answer-sq-label {
-  display: block; font-size: 0.8rem; font-weight: 600;
-  color: var(--text-secondary); margin-bottom: 6px;
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
 }
 
 /* 오답노트 저장 버튼 */
@@ -1090,7 +1211,14 @@ h3,
   color: #475569;
   border: 1px solid #cbd5e1;
 }
-.btn-save-note.saved { background: #e0f2fe; color: #0284c7; border-color: #bae6fd; font-weight: 600; }
+
+.btn-save-note.saved {
+  background: #e0f2fe;
+  color: #0284c7;
+  border-color: #bae6fd;
+  font-weight: 600;
+}
+
 .save-note-locked {
   display: inline-flex;
   padding: 10px 20px;
@@ -1102,41 +1230,207 @@ h3,
 }
 
 /* 마이페이지 레이아웃 */
-.mypage-layout { padding: 40px 24px; max-width: 1000px; margin: 0 auto; display: flex; gap: 32px; align-items: flex-start; }
-.mypage-nav { width: 240px; display: flex; flex-direction: column; gap: 12px; }
+.mypage-layout {
+  padding: 40px 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.mypage-nav {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .mypage-nav-item {
-  padding: 12px 16px; border-radius: var(--radius-sm);
-  background: var(--bg-card); color: var(--text-primary);
-  font-weight: 500; font-size: 0.95rem; border: 1px solid var(--border-default);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.95rem;
+  border: 1px solid var(--border-default);
   transition: all 0.2s;
 }
-.mypage-nav-item:hover { background: var(--bg-card-hover); border-color: var(--border-subtle); }
-.mypage-content { flex: 1; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 32px; min-height: 500px; }
-.mypage-pro-badge { padding: 8px 12px; background: rgba(204, 120, 92, 0.1); border-radius: var(--radius-sm); border: 1px solid rgba(204, 120, 92, 0.2); font-size: 0.8rem; color: var(--accent-primary); text-align: center; }
-.mypage-blocked { text-align: center; padding: 60px 20px; color: var(--text-muted); }
-.mypage-blocked h2 { margin-bottom: 12px; color: var(--text-primary); }
+
+.mypage-nav-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-subtle);
+}
+
+.mypage-content {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  min-height: 500px;
+}
+
+.mypage-pro-badge {
+  padding: 8px 12px;
+  background: rgba(204, 120, 92, 0.1);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(204, 120, 92, 0.2);
+  font-size: 0.8rem;
+  color: var(--accent-primary);
+  text-align: center;
+}
+
+.mypage-blocked {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.mypage-blocked h2 {
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
 
 /* 오답노트 · 학습통계 목록 */
-.notes-title, .stats-title { font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 24px; }
-.note-card { display: block; border: 1px solid var(--border-default); background: var(--bg-secondary); padding: 20px; border-radius: var(--radius-md); margin-bottom: 16px; transition: transform 0.2s; }
-.note-card:hover { transform: translateY(-2px); border-color: var(--border-subtle); }
-.note-card-subject { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
-.note-card-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
-.note-card-meta { display: flex; gap: 12px; align-items: center; font-size: 0.85rem; }
-.note-score { font-weight: 600; color: var(--accent-secondary); }
-.note-hint-badge { padding: 4px 8px; background: #fee2e2; color: #b91c1c; border-radius: 4px; font-size: 0.75rem; }
-.note-date { color: var(--text-muted); margin-left: auto; }
+.notes-title,
+.stats-title {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  margin-bottom: 24px;
+}
 
-.stats-tabs { display: flex; gap: 12px; margin-bottom: 32px; border-bottom: 1px solid var(--border-default); padding-bottom: 12px; }
-.stats-tab { background: transparent; border: none; padding: 8px 16px; font-size: 0.95rem; cursor: pointer; color: var(--text-muted); font-weight: 500; border-radius: 4px; }
-.stats-tab.active { background: var(--bg-secondary); color: var(--accent-primary); }
-.stats-overall-all { text-align: center; padding: 40px; background: var(--bg-secondary); border-radius: var(--radius-md); margin-bottom: 32px; }
-.stats-label { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; }
-.stats-score-big { font-size: 3rem; font-weight: 800; color: var(--accent-primary); }
-.stats-overall { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
-.stats-overall-item { background: var(--bg-secondary); padding: 20px; border-radius: var(--radius-md); text-align: center; }
-.stats-value { display: block; font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
-.stats-table { width: 100%; border-collapse: collapse; }
-.stats-table th, .stats-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--border-default); font-size: 0.9rem; }
-.stats-table th { font-weight: 600; color: var(--text-secondary); }
+.note-card {
+  display: block;
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  transition: transform 0.2s;
+}
 
+.note-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-subtle);
+}
+
+.note-card-subject {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.note-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.note-card-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.note-score {
+  font-weight: 600;
+  color: var(--accent-secondary);
+}
+
+.note-hint-badge {
+  padding: 4px 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.note-date {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.stats-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: 12px;
+}
+
+.stats-tab {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.stats-tab.active {
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
+}
+
+.stats-overall-all {
+  text-align: center;
+  padding: 40px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: 32px;
+}
+
+.stats-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.stats-score-big {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--accent-primary);
+}
+
+.stats-overall {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stats-overall-item {
+  background: var(--bg-secondary);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.stats-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-default);
+  font-size: 0.9rem;
+}
+
+.stats-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
