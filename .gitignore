@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# separate Python problem-upload tool, nested here for convenience only — not part of this app
+/cta_uploader
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
