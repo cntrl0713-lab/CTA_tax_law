@@ -72,15 +72,17 @@ export default async function SubjectPage({
                             <div className="card problem-card">
                                 <div>
                                     <div className="problem-title">{problem.title}</div>
-                                    <div className="problem-meta">
-                                        {problem.problem_type === 'theory' ? (
-                                            `물음 ${problem.cta_subquestion?.[0]?.count || 0}개 · 총 ${problem.total_score}점`
-                                        ) : problem.issue_text_compact && (
-                                            problem.issue_text_compact.length > 80
-                                                ? problem.issue_text_compact.slice(0, 80) + '…'
-                                                : problem.issue_text_compact
-                                        )}
-                                    </div>
+                                    {(problem.problem_type === 'theory' || problem.issue_text_compact) && (
+                                        <div className="problem-meta">
+                                            {problem.problem_type === 'theory' ? (
+                                                `물음 ${problem.cta_subquestion?.[0]?.count || 0}개 · 총 ${problem.total_score}점`
+                                            ) : (
+                                                problem.issue_text_compact!.length > 80
+                                                    ? problem.issue_text_compact!.slice(0, 80) + '…'
+                                                    : problem.issue_text_compact
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 {problem.problem_type === 'case' && (
                                     <div className="problem-score">{problem.total_score}점</div>
