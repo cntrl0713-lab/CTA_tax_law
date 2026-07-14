@@ -26,6 +26,9 @@ export async function GET(request: Request) {
         }
     }
 
-    // 에러 발생 시 로그인 페이지로 리다이렉트
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('인증에 실패했습니다. 다시 시도해 주세요.')}`)
+    // 에러 발생 시 로그인 페이지로 리다이렉트.
+    // 대표 케이스: 가입한 브라우저가 아닌 곳(폰 메일앱 등)에서 인증 링크를 열면 PKCE code verifier
+    // 쿠키가 없어 교환이 실패하는데, 이때도 이메일 인증 자체는 이미 완료된 상태다 — "다시 시도"로
+    // 안내하면 재시도 루프에 빠지므로 로그인 유도로 안내한다.
+    return NextResponse.redirect(`${origin}/login?message=${encodeURIComponent('이메일 인증이 완료되었을 수 있습니다. 로그인해 주세요.')}`)
 }

@@ -14,24 +14,8 @@ export default async function NotesPage({
     const { data: { user } } = await auth.auth.getUser()
     if (!user || user.is_anonymous) redirect('/login')
 
-    const admin = createAdminClient()
-    const { data: ctaUser } = await admin
-        .from('cta_user')
-        .select('tier')
-        .eq('id', user.id)
-        .single()
-
-    const tier = ctaUser?.tier ?? 'member'
-    if (!['pro', 'admin'].includes(tier)) {
-        return (
-            <div className="mypage-blocked">
-                <h2>🔒 pro 회원 전용 기능</h2>
-                <p>오답노트는 pro 이상 회원만 이용할 수 있습니다.</p>
-            </div>
-        )
-    }
-
     // 오답노트 목록 조회
+    const admin = createAdminClient()
     let query = admin
         .from('cta_grading_attempt')
         .select(`

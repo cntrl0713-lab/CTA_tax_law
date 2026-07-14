@@ -1434,3 +1434,13 @@ h3,
   font-weight: 600;
   color: var(--text-secondary);
 }
+/* 랭킹 전용 스타일 */
+.ranking-container { padding: 2rem 1rem; }
+.ranking-header { text-align: center; margin-bottom: 2rem; }
+.ranking-header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+.ranking-header p { color: var(--text-secondary); }
+.ranking-board { max-width: 800px; margin: 0 auto; background-color: var(--bg-card); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border-default); box-shadow: var(--shadow-card); }
+.ranking-empty { text-align: center; padding: 3rem; color: var(--text-secondary); }
+.ranking-table { width: 100%; border-collapse: collapse; text-align: left; }
+.ranking-table th { padding: 1rem; border-bottom: 2px solid var(--border-subtle); color: var(--text-secondary); }
+.ranking-table td { padding: 1rem; border-bottom: 1px solid var(--border-default); }

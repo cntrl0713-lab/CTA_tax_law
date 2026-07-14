@@ -61,6 +61,7 @@ export interface SubjectWithCount extends Subject {
 export interface CtaUser {
     id: string
     email: string | null
+    nickname: string | null
     tier: 'member' | 'pro' | 'admin'
     exp: number
     created_at: string

@@ -17,24 +17,11 @@ export async function GET(req: Request) {
     // 1. 인증
     const supabase = await createClient()
     const { data: { user }, error: authErr } = await supabase.auth.getUser()
-    if (authErr || !user) {
-        return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    if (authErr || !user || user.is_anonymous) {
+        return NextResponse.json({ error: '회원 로그인이 필요합니다.' }, { status: 401 })
     }
 
-    // 2. pro 이상 권한 확인
     const admin = createAdminClient()
-    const { data: ctaUser } = await admin
-        .from('cta_user')
-        .select('tier')
-        .eq('id', user.id)
-        .single()
-
-    if (!ctaUser || !['pro', 'admin'].includes(ctaUser.tier)) {
-        return NextResponse.json(
-            { error: 'pro 이상 회원만 학습 통계를 이용할 수 있습니다.' },
-            { status: 403 }
-        )
-    }
 
     // 3. 기간 파라미터
     const url = new URL(req.url)

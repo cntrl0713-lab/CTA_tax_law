@@ -52,14 +52,30 @@ export default async function SignupPage({
                     <form>
                         <div className="form-group">
                             <label className="form-label" htmlFor="email">
-                                아이디 또는 이메일
+                                이메일
                             </label>
                             <input
                                 className="form-input"
                                 id="email"
                                 name="email"
+                                type="email"
+                                placeholder="you@example.com"
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="nickname">
+                                닉네임
+                            </label>
+                            <input
+                                className="form-input"
+                                id="nickname"
+                                name="nickname"
                                 type="text"
-                                placeholder="아이디 또는 you@example.com"
+                                placeholder="2~12자 (한글/영문/숫자, 공백 및 @ 금지)"
+                                minLength={2}
+                                maxLength={12}
+                                pattern="^[가-힣a-zA-Z0-9]+$"
                                 required
                             />
                         </div>
