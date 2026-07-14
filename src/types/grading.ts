@@ -20,6 +20,8 @@ export interface GradeResponse {
     _diagnostics?: {
         retried: boolean
         contradictions: string[]
+        /** 길이 미달 또는 반복 문자로 로컬 0점 처리된 물음 번호 목록 (비용 절감 관측용) */
+        skippedSubquestions?: number[]
     }
 }
 

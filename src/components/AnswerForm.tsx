@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { ProblemWithDetails } from '@/types/db'
 import type { GradeResponse } from '@/types/grading'
 import type { HintResponse, AnswerRevealResponse } from '@/types/hint'
+import { isLocallySkippable } from '@/lib/grading-skip'
 import GradingResult from './GradingResult'
 
 interface AnswerFormProps {
@@ -70,20 +71,27 @@ export default function AnswerForm({ problem, userTier = 'guest' }: AnswerFormPr
     }
 
     const handleSubmit = async () => {
-        const invalidSubquestions = problem.cta_subquestion.filter((sq) => {
+        // 판정 기준은 src/lib/grading-skip.ts의 isLocallySkippable이 단일 원천.
+        // 서버가 실제 판정 원천이고 여기서는 사용자 안내 및 불필요한 제출 사전 차단용.
+        const subquestionsChecked = problem.cta_subquestion.map((sq) => {
             const text = answers[sq.number] || ''
-            const trimmed = text.trim()
-            if (trimmed.length < 30) return true
-            const cleaned = trimmed.replace(/\s/g, '')
-            const uniqueChars = new Set(cleaned).size
-            return uniqueChars < 5
+            const result = isLocallySkippable(text)
+            return { number: sq.number, willSkip: result.skip }
         })
 
-        if (invalidSubquestions.length > 0) {
-            setError(
-                `물음 ${invalidSubquestions.map((sq) => sq.number).join(', ')}번의 답안이 너무 짧거나 단순 문자가 반복되었습니다. (최소 30자 이상 작성 및 유의미한 내용 필요)`
-            )
+        const allSkipped = subquestionsChecked.every((sq) => sq.willSkip)
+        if (allSkipped) {
+            setError('모든 물음의 답안이 채점 불가 상태입니다(너무 짧거나 단순 반복 문자). 최소 한 물음은 유의미한 내용을 작성해야 채점이 가능합니다.')
             return
+        }
+
+        const skippedSqs = subquestionsChecked.filter((sq) => sq.willSkip)
+        if (skippedSqs.length > 0) {
+            const nums = skippedSqs.map((sq) => sq.number).join(', ')
+            const proceed = confirm(`물음 ${nums}은(는) 답안이 너무 짧거나 반복 문자여서 0점 처리됩니다. 채점 횟수는 1회 차감됩니다. 그래도 채점할까요?`)
+            if (!proceed) {
+                return
+            }
         }
 
         setLoading(true)

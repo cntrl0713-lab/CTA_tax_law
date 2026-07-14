@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import type { ProblemWithDetails } from '@/types/db'
 import type { SubquestionAnswer, GradeResponse, SubquestionResult } from '@/types/grading'
+import { isLocallySkippable, MIN_GRADABLE_ANSWER_LENGTH } from '@/lib/grading-skip'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
@@ -497,6 +498,35 @@ async function gradeSingleSubquestion(
     sq: ProblemWithDetails['cta_subquestion'][number],
     answerText: string | undefined
 ): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[] } }> {
+    const skipCheck = isLocallySkippable(answerText)
+    if (skipCheck.skip) {
+        const cleanLen = (answerText ?? '').trim().length
+        console.log(
+            `[grading] 물음 ${sq.number} 로컬 스킵 (사유: ${skipCheck.reason}, 길이: ${cleanLen}자)`
+        )
+        const rubricResults = [...sq.cta_subquestion_rubric]
+            .sort((a, b) => a.display_order - b.display_order)
+            .map((r) => ({
+                criterionName: r.criterion_name,
+                evidenceQuote: '',
+                status: 'unmet' as const,
+                awardedScore: 0,
+                maxScore: r.max_score,
+            }))
+        const feedback = skipCheck.reason === 'too_short'
+            ? `답안이 공백 포함 ${MIN_GRADABLE_ANSWER_LENGTH}자 이하로 짧아 AI 채점 없이 0점 처리되었습니다.`
+            : '답안이 무의미한 반복 문자로 판정되어 AI 채점 없이 0점 처리되었습니다.'
+        return {
+            subquestion: {
+                number: sq.number,
+                awardedScore: 0,
+                maxScore: sq.score,
+                feedback,
+                rubricResults,
+            }
+        }
+    }
+
     const answers: SubquestionAnswer[] = [{ subquestionNumber: sq.number, answerText: answerText || '' }]
     const userPrompt = buildFixedOverhead(problem) + buildSubquestionBlock(sq, answerText)
 
@@ -627,6 +657,11 @@ export async function gradeProblem(
     problem: ProblemWithDetails,
     answers: SubquestionAnswer[]
 ): Promise<GradeResponse> {
+    const allSkipped = problem.cta_subquestion.every((sq) => {
+        const answer = answers.find((a) => a.subquestionNumber === sq.number)
+        return isLocallySkippable(answer?.answerText).skip
+    })
+
     const settledResults = await Promise.allSettled(
         problem.cta_subquestion.map((sq) => {
             const answer = answers.find((a) => a.subquestionNumber === sq.number)
@@ -676,20 +711,32 @@ export async function gradeProblem(
     )
 
     let overallComment = '채점이 완료되었습니다.'
-    try {
-        overallComment = await synthesizeOverallComment(problem, normalizedAll.subquestions, normalizedAll.totalScore)
-    } catch (err) {
-        console.warn('[grading] 총평 합성 실패, 폴백 문구 대체:', err)
+    if (allSkipped) {
+        overallComment = '답안이 작성되지 않아 채점할 내용이 없습니다.'
+    } else {
+        try {
+            overallComment = await synthesizeOverallComment(problem, normalizedAll.subquestions, normalizedAll.totalScore)
+        } catch (err) {
+            console.warn('[grading] 총평 합성 실패, 폴백 문구 대체:', err)
+        }
     }
 
+    // 로컬 스킵된 물음 번호 수집 (비용 절감 관측용)
+    const skippedSubquestions = problem.cta_subquestion
+        .filter((sq) => {
+            const answer = answers.find((a) => a.subquestionNumber === sq.number)
+            return isLocallySkippable(answer?.answerText).skip
+        })
+        .map((sq) => sq.number)
+
     const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[] } => !!d)
-    const diagnostics: GradeResponse['_diagnostics'] | undefined =
-        diagnosticsList.length > 0
-            ? {
-                retried: diagnosticsList.some((d) => d.retried),
-                contradictions: diagnosticsList.flatMap((d) => d.contradictions),
-            }
-            : undefined
+    const diagnostics: GradeResponse['_diagnostics'] = {
+        retried: diagnosticsList.some((d) => d.retried),
+        contradictions: diagnosticsList.flatMap((d) => d.contradictions),
+        ...(skippedSubquestions.length > 0 ? { skippedSubquestions } : {}),
+    }
+    // retried=false + contradictions=[] + skippedSubquestions=없음 이면 기록 생략
+    const hasDiagnostics = diagnostics.retried || diagnostics.contradictions.length > 0 || skippedSubquestions.length > 0
 
     return {
         problemId: problem.id,
@@ -697,6 +744,6 @@ export async function gradeProblem(
         totalScore: normalizedAll.totalScore,
         subquestions: normalizedAll.subquestions,
         overallComment,
-        ...(diagnostics ? { _diagnostics: diagnostics } : {}),
+        ...(hasDiagnostics ? { _diagnostics: diagnostics } : {}),
     }
 }
