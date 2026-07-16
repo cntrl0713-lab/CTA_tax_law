@@ -54,6 +54,11 @@ const MIN_EVIDENCE_QUOTE_LENGTH = 6 // 정규화 후 최소 글자 수 (조사 1
 // 특정 루브릭 한 개만 다루는 경우(예: 판례 법리만 서술) 답안 전체를 인용하는 것이 정확한
 // 근거일 수 있음을 실측으로 확인했음 — 답안 전체 복붙 여부만으로는 무의미 근거를 판별할 수 없음
 
+export const FORCED_ZERO_SUFFIX = ' (안내: 근거 문장을 답안에서 확인할 수 없어 시스템에 의해 일부 채점 결과가 0점 처리되었습니다.)'
+// 교정 재시도로 점수·판정이 실제로 바뀌었는데 모델이 재작성 피드백(revisedFeedback, optional)을
+// 생략한 경우, 1차 피드백이 바뀐 점수와 모순되지 않도록 덧붙이는 중립 안내. 점수 하락·상승 양쪽을 포괄한다.
+export const SCORE_ADJUSTED_NOTICE = ' (안내: 채점 검증 과정에서 일부 기준의 점수가 조정되었습니다. 위 항목별 점수를 기준으로 확인해 주세요.)'
+
 type ParsedGradeResult = Omit<GradeResponse, 'problemId' | 'maxScore' | '_diagnostics'>
 
 /** 공백·주요 문장부호를 제거해 인용 대조 전용으로 정규화합니다. */
@@ -295,6 +300,7 @@ const CORRECTION_SCHEMA = {
                 required: ['subquestionNumber', 'criterionName', 'evidenceQuote', 'status', 'awardedScore'],
             },
         },
+        revisedFeedback: { type: Type.STRING, description: '점수 변경을 반영하여 새롭게 작성한 물음별 피드백 (공백 포함 150자 이내)' },
     },
     required: ['corrections'],
 }
@@ -319,7 +325,9 @@ function buildCorrectionRequest(contradictions: Contradiction[]): string {
     return `방금 채점한 결과 중 아래 채점 기준들의 점수 판정을 다시 확인해야 합니다.
 ${lines.join('\n')}
 
-이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과만 corrections 배열로 반환하세요.
+이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과(corrections)를 반환하세요.
+만약 교정 결과 점수(awardedScore)나 판정(status)이 원래 결과와 달라지는 항목이 있다면, 바뀐 점수 상황을 반영하여 새롭게 수정한 150자 이내의 종합 피드백(revisedFeedback)을 선택적으로 함께 작성해 주세요. (점수나 판정이 바뀌지 않는다면 생략 가능합니다.)
+- revisedFeedback을 작성할 경우 답안 전체에 대한 종합적인 피드백으로 작성하되, 재채점·교정·재검토 과정을 뜻하는 말은 절대 쓰지 말고 한 번에 완벽하게 채점한 것처럼 자연스럽게 작성하세요.
 - 다른 물음이나 다른 채점 기준의 판정에 얽매이지 말고, 지금 재검토하는 기준 하나만 놓고 이 물음의 답안을 독립적으로 다시 읽으세요.
 - 답안에 실제로 있는 문장을 그대로 evidenceQuote로 인용할 수 있는 경우에만 met 또는 partially_met과 0보다 큰 점수를 부여하세요.
 - 답안에 해당 내용이 전혀 없다면 반드시 status를 unmet, awardedScore를 0, evidenceQuote를 빈 문자열로 하세요.
@@ -327,14 +335,17 @@ ${lines.join('\n')}
 }
 
 /**
- * 교정 응답의 corrections를 원본 결과에 병합합니다. 모델이 무엇을 반환하든, 애초에 모순으로
- * 식별된 (물음, 기준) 키에 해당하는 항목만 반영합니다 — 그 외 물음/기준/feedback/총평은
- * 1차 결과 그대로 유지되어 무관한 항목에 대한 부수 피해를 코드 수준에서 원천 차단합니다.
+ * 교정 응답의 corrections를 원본 결과에 병합합니다. 애초에 모순으로 식별된 기준만 반영하며,
+ * status나 awardedScore가 실제로 변한 물음에 한해 피드백을 정합화합니다: 모델이 revisedFeedback을
+ * 주면 통째로 교체하고, (optional이라) 생략했으면 스테일 피드백이 바뀐 점수와 모순되지 않도록
+ * 중립 안내(SCORE_ADJUSTED_NOTICE)를 덧붙여, 피드백-점수 정합을 모델 준수와 무관하게 코드가
+ * 보장합니다. 점수·판정이 안 바뀐 물음은 1차 피드백을 그대로 유지합니다.
  */
-function applyCorrections(
+export function applyCorrections(
     result: ParsedGradeResult,
     contradictions: Contradiction[],
-    corrections: Correction[]
+    corrections: Correction[],
+    revisedFeedback?: string
 ): ParsedGradeResult {
     const key = (subquestionNumber: number, criterionName: string) =>
         `${subquestionNumber}::${normalizeForEvidenceMatch(criterionName)}`
@@ -348,22 +359,36 @@ function applyCorrections(
     return {
         ...result,
         subquestions: result.subquestions.map((sq) => {
+            let changed = false
             const rubricResults = sq.rubricResults.map((rr) => {
                 const c = byKey.get(key(sq.number, rr.criterionName))
                 if (!c) return rr
+                if (c.status !== rr.status || c.awardedScore !== rr.awardedScore) {
+                    changed = true
+                }
                 return { ...rr, evidenceQuote: c.evidenceQuote, status: c.status, awardedScore: c.awardedScore }
             })
-            return { ...sq, rubricResults }
+            const currentFeedback = sq.feedback ?? ''
+            let feedback = currentFeedback
+            if (changed) {
+                if (revisedFeedback && revisedFeedback.trim()) {
+                    feedback = revisedFeedback
+                } else if (!currentFeedback.includes(SCORE_ADJUSTED_NOTICE)) {
+                    feedback = currentFeedback + SCORE_ADJUSTED_NOTICE
+                }
+            }
+            return { ...sq, rubricResults, feedback }
         }),
     }
 }
 
 /**
  * 재시도 이후에도 남은 모순에 대해, 해당 루브릭 결과만 강제로 awardedScore=0, status='unmet'으로
- * 되돌립니다(evidence_present_but_unmet의 경우 이미 0점/unmet이므로 사실상 유지). 합산 재계산은
+ * 되돌립니다(evidence_present_but_unmet의 경우 이미 0점/unmet이므로 사실상 유지). 실제로 점수가
+ * 강제 정정된 경우 피드백 끝에 안내 문구(FORCED_ZERO_SUFFIX)를 부착합니다. 합산 재계산은
  * 호출부에서 normalizeScoresAgainstRubrics를 다시 호출해 수행합니다(단일 책임 유지). 순수 함수입니다.
  */
-function forceZeroOutContradictions(
+export function forceZeroOutContradictions(
     result: ParsedGradeResult,
     contradictions: Contradiction[]
 ): ParsedGradeResult {
@@ -373,14 +398,23 @@ function forceZeroOutContradictions(
 
     return {
         ...result,
-        subquestions: result.subquestions.map((sq) => ({
-            ...sq,
-            rubricResults: sq.rubricResults.map((rr) =>
-                flagged.has(`${sq.number}::${rr.criterionName}`)
-                    ? { ...rr, awardedScore: 0, status: 'unmet' as const }
-                    : rr
-            ),
-        })),
+        subquestions: result.subquestions.map((sq) => {
+            let forcedCount = 0
+            const rubricResults = sq.rubricResults.map((rr) => {
+                if (flagged.has(`${sq.number}::${rr.criterionName}`)) {
+                    if (rr.status !== 'unmet' || rr.awardedScore > 0) forcedCount++
+                    return { ...rr, awardedScore: 0, status: 'unmet' as const }
+                }
+                return rr
+            })
+            const currentFeedback = sq.feedback ?? ''
+            const needsSuffix = forcedCount > 0 && !currentFeedback.includes(FORCED_ZERO_SUFFIX)
+            return {
+                ...sq,
+                rubricResults,
+                ...(needsSuffix ? { feedback: currentFeedback + FORCED_ZERO_SUFFIX } : {})
+            }
+        }),
     }
 }
 
@@ -497,7 +531,7 @@ async function gradeSingleSubquestion(
     problem: ProblemWithDetails,
     sq: ProblemWithDetails['cta_subquestion'][number],
     answerText: string | undefined
-): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[] } }> {
+): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[]; forced?: boolean } }> {
     const skipCheck = isLocallySkippable(answerText)
     if (skipCheck.skip) {
         const cleanLen = (answerText ?? '').trim().length
@@ -586,9 +620,9 @@ async function gradeSingleSubquestion(
         const correctionText = correctionResponse.text
         if (!correctionText) throw new Error('교정 재시도 응답이 비어 있습니다.')
 
-        const { corrections } = JSON.parse(correctionText) as { corrections: Correction[] }
+        const { corrections, revisedFeedback } = JSON.parse(correctionText) as { corrections: Correction[]; revisedFeedback?: string }
         let patched = normalizeScoresAgainstRubrics(
-            applyCorrections(normalized, contradictions, corrections),
+            applyCorrections(normalized, contradictions, corrections, revisedFeedback),
             problem
         )
         const remaining = [...findPhantomEvidence(patched, answers), ...findSuppressedEvidence(patched, answers)]
@@ -598,16 +632,18 @@ async function gradeSingleSubquestion(
             patched = normalizeScoresAgainstRubrics(forceZeroOutContradictions(patched, remaining), problem)
         }
         normalized = patched
+        const forcedAny = normalized.subquestions.some((s) => (s.feedback ?? '').includes(FORCED_ZERO_SUFFIX))
         return {
             subquestion: normalized.subquestions[0],
-            diagnostics: { retried: true, contradictions: describe(remaining.length > 0 ? remaining : contradictions) },
+            diagnostics: { retried: true, contradictions: describe(remaining.length > 0 ? remaining : contradictions), forced: forcedAny },
         }
     } catch (err) {
         console.warn(`[grading] 물음 ${sq.number} 유령 근거 교정 재시도 실패, 원본 결과에서 강제 0점 처리:`, err, contradictions)
         normalized = normalizeScoresAgainstRubrics(forceZeroOutContradictions(normalized, contradictions), problem)
+        const forcedAny = normalized.subquestions.some((s) => (s.feedback ?? '').includes(FORCED_ZERO_SUFFIX))
         return {
             subquestion: normalized.subquestions[0],
-            diagnostics: { retried: false, contradictions: describe(contradictions) },
+            diagnostics: { retried: false, contradictions: describe(contradictions), forced: forcedAny },
         }
     }
 }
@@ -729,14 +765,15 @@ export async function gradeProblem(
         })
         .map((sq) => sq.number)
 
-    const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[] } => !!d)
+    const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[]; forced?: boolean } => !!d)
     const diagnostics: GradeResponse['_diagnostics'] = {
         retried: diagnosticsList.some((d) => d.retried),
         contradictions: diagnosticsList.flatMap((d) => d.contradictions),
+        ...(diagnosticsList.some((d) => d.forced) ? { forced: true } : {}),
         ...(skippedSubquestions.length > 0 ? { skippedSubquestions } : {}),
     }
-    // retried=false + contradictions=[] + skippedSubquestions=없음 이면 기록 생략
-    const hasDiagnostics = diagnostics.retried || diagnostics.contradictions.length > 0 || skippedSubquestions.length > 0
+    // retried=false + contradictions=[] + skippedSubquestions=없음 + forced=false 이면 기록 생략
+    const hasDiagnostics = diagnostics.retried || diagnostics.contradictions.length > 0 || skippedSubquestions.length > 0 || diagnostics.forced
 
     return {
         problemId: problem.id,

@@ -50,7 +50,7 @@
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem9 --merged
  *   npx -y tsx --env-file=.env.local tests/verify-grading.ts --problem46 --merged
  */
-import { gradeProblem } from '../src/lib/gemini/gradeProblem'
+import { gradeProblem, applyCorrections, forceZeroOutContradictions, FORCED_ZERO_SUFFIX, SCORE_ADJUSTED_NOTICE } from '../src/lib/gemini/gradeProblem'
 import type { ProblemWithDetails } from '../src/types/db'
 import type { SubquestionAnswer } from '../src/types/grading'
 
@@ -980,7 +980,66 @@ function findFalseOmissions(feedback: string, answerText: string): string[] {
     return found
 }
 
+function testPureFunctions() {
+    console.log('\n=== 순수 함수 단위 테스트 ===')
+    const reqResult: any = {
+        subquestions: [{
+            number: 1,
+            feedback: '기존 피드백',
+            rubricResults: [{ criterionName: '기준1', awardedScore: 2, maxScore: 2, status: 'met', evidenceQuote: '근거' }]
+        }]
+    }
+    const contradictions: any[] = [{ subquestionNumber: 1, criterionName: '기준1', reason: 'missing_evidence' }]
+    const correctionsVary: any[] = [{ subquestionNumber: 1, criterionName: '기준1', status: 'unmet', awardedScore: 0, evidenceQuote: '' }]
+    const correctionsSame: any[] = [{ subquestionNumber: 1, criterionName: '기준1', status: 'met', awardedScore: 2, evidenceQuote: '근거새거' }]
+
+    // 테스트 1: applyCorrections 변경 시
+    const applied1 = applyCorrections(reqResult, contradictions, correctionsVary, '새 피드백')
+    if (applied1.subquestions[0].feedback !== '새 피드백') throw new Error('applyCorrections FAIL: 피드백 미변경')
+
+    // 테스트 2: applyCorrections 미변경 시 (c.status 와 c.awardedScore 가 이전과 완전 같음)
+    const applied2 = applyCorrections(reqResult, contradictions, correctionsSame, '새 피드백')
+    if (applied2.subquestions[0].feedback !== '기존 피드백') throw new Error('applyCorrections FAIL: 불필요한 피드백 변경')
+
+    // 테스트 3: forceZeroOutContradictions 강제 0점 처리 -> 접미사 추가
+    const forced1 = forceZeroOutContradictions(reqResult, contradictions)
+    if (!forced1.subquestions[0].feedback.includes(FORCED_ZERO_SUFFIX)) throw new Error('forceZeroOut FAIL: 안내 문구 누락')
+
+    // 테스트 4: forceZeroOutContradictions 이미 0점/unmet인 경우 -> 유지
+    const reqResultZero: any = {
+        subquestions: [{
+            number: 1, feedback: '기존 피드백2',
+            rubricResults: [{ criterionName: '기준1', awardedScore: 0, maxScore: 2, status: 'unmet', evidenceQuote: '불필요한인용' }]
+        }]
+    }
+    const forced2 = forceZeroOutContradictions(reqResultZero, contradictions)
+    if (forced2.subquestions[0].feedback !== '기존 피드백2') throw new Error('forceZeroOut FAIL: 이미 0점인 항목에 문구 추가됨')
+
+    // 테스트 5: forceZeroOutContradictions 멱등성 (이미 안내 문구가 있는 경우 중복 추가 안 함)
+    const forced3 = forceZeroOutContradictions(forced1, contradictions)
+    if (forced3.subquestions[0].feedback !== forced1.subquestions[0].feedback) throw new Error('forceZeroOut FAIL: 안내 문구 중복 추가됨')
+
+    // 테스트 6: 점수가 바뀌었는데 revisedFeedback이 falsy면 -> 스테일 방지 중립 안내를 덧붙인다
+    const applied3 = applyCorrections(reqResult, contradictions, correctionsVary, '')
+    if (applied3.subquestions[0].feedback !== '기존 피드백' + SCORE_ADJUSTED_NOTICE) throw new Error('applyCorrections FAIL: 점수 변경+빈 피드백이면 중립 안내를 부착해야 함')
+
+    // 테스트 7: 이미 중립 안내가 붙은 피드백에는 중복 부착하지 않는다 (멱등)
+    const reqResultNoticed: any = {
+        subquestions: [{
+            number: 1,
+            feedback: '기존 피드백' + SCORE_ADJUSTED_NOTICE,
+            rubricResults: [{ criterionName: '기준1', awardedScore: 2, maxScore: 2, status: 'met', evidenceQuote: '근거' }]
+        }]
+    }
+    const applied4 = applyCorrections(reqResultNoticed, contradictions, correctionsVary, '')
+    if (applied4.subquestions[0].feedback !== '기존 피드백' + SCORE_ADJUSTED_NOTICE) throw new Error('applyCorrections FAIL: 중립 안내가 중복 부착됨')
+
+    console.log('PASS: 순수 함수 7종 단위 테스트 완료\n')
+}
+
 async function main() {
+    testPureFunctions()
+
     const fixture = process.argv.includes('--problem9')
         ? PROBLEM9_FIXTURE
         : process.argv.includes('--problem46')
@@ -1089,6 +1148,20 @@ async function main() {
                 pass: segments.length > 0 && segments.every((seg) => normAns.includes(seg)),
             })
         }
+    }
+
+    if (result._diagnostics?.forced) {
+        let hasNotice = false
+        for (const sq of result.subquestions) {
+            if (sq.feedback.includes(FORCED_ZERO_SUFFIX)) {
+                hasNotice = true
+                break
+            }
+        }
+        checks.push({
+            name: `강제 0점 처리(forced=true) 상태일 때 피드백에 안내 문구 포함`,
+            pass: hasNotice
+        })
     }
 
     if (mode === 'incomplete') {
