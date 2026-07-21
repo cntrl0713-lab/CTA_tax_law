@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai'
 import type { ProblemWithDetails } from '@/types/db'
 import type { SubquestionAnswer, GradeResponse, SubquestionResult } from '@/types/grading'
 import { isLocallySkippable, MIN_GRADABLE_ANSWER_LENGTH } from '@/lib/grading-skip'
@@ -133,8 +133,10 @@ function normalizeScoresAgainstRubrics(
                         ? maxScore
                         : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
-            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
-            const status = awardedScore === 0 ? 'unmet' : rr.status
+            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리.
+            // 대칭 케이스(실측, 문제57 강한 답안 회귀 2026-07-21): 만점인데 status가 met이 아닌 경우
+            // (예: partially_met+만점)도 같은 규칙("완전히 충족했으면 met")에 맞춰 라벨만 met으로 정리.
+            const status = awardedScore === 0 ? 'unmet' : awardedScore === maxScore ? 'met' : rr.status
             return { ...rr, maxScore, awardedScore, status }
         })
 
@@ -569,12 +571,12 @@ async function gradeSingleSubquestion(
         responseMimeType: 'application/json' as const,
         temperature: 0,
         // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
-        thinkingConfig: { thinkingBudget: 1024 },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
         responseSchema: SUBQUESTION_SCHEMA,
     }
 
     const response = await generateContentWithRetry({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         contents: userPrompt,
         config,
     })
@@ -603,7 +605,7 @@ async function gradeSingleSubquestion(
         // 스코프 축소형 교정 재시도: 이 물음의 1차 대화만 재사용해, 모순이 발견된 기준만 재판정받고
         // 코드에서 병합합니다 — 다른 물음은 애초에 이 대화에 포함된 적이 없습니다.
         const correctionResponse = await generateContentWithRetry({
-            model: 'gemini-2.5-flash-lite',
+            model: 'gemini-3.1-flash-lite',
             contents: [
                 { role: 'user', parts: [{ text: userPrompt }] },
                 { role: 'model', parts: [{ text }] },
@@ -613,7 +615,7 @@ async function gradeSingleSubquestion(
                 systemInstruction: systemPrompt,
                 responseMimeType: 'application/json' as const,
                 temperature: 0,
-                thinkingConfig: { thinkingBudget: 1024 },
+                thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
                 responseSchema: CORRECTION_SCHEMA,
             },
         })
@@ -669,11 +671,12 @@ ${summary}
 위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 물음별 피드백의 구체적인 수정 지시를 인용하지 말고 전체적인 경향만 요약하여 잘한 점과 부족한 점을 균형 있게 반영하세요.`
 
     const response = await generateContentWithRetry({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         contents: prompt,
         config: {
             responseMimeType: 'application/json' as const,
             temperature: 0,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
             responseSchema: OVERALL_COMMENT_SCHEMA,
         },
     })
