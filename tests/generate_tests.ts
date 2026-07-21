@@ -3,7 +3,9 @@ import path from 'path'
 
 const DATA_DIR = path.resolve(__dirname, '../../cta_uploader/data')
 const OUT_PATH = path.resolve(__dirname, 'verify-extra.ts')
-const TARGET_IDS = [2, 12, 22, 32, 42, 52]
+// 22는 2026-07-21에 제외했다 — verify-grading.ts의 PROBLEM22_FIXTURE로 완전히 대체되어 중복이었음.
+// 32/42는 cta_uploader/data에 해당 파일이 없어 원래부터 생성 시 스킵됨(processProblems의 경고 로그 참고).
+const TARGET_IDS = [2, 12, 32, 42, 52]
 
 function processProblems() {
     const targetProblems: any[] = []

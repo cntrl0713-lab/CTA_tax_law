@@ -620,6 +620,10 @@ h3,
   border-left: 3px solid var(--accent-danger);
 }
 
+.rubric-partially-met {
+  border-left: 3px solid var(--accent-warning);
+}
+
 .rubric-icon {
   font-size: 1rem;
 }

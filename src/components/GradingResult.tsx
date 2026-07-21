@@ -37,9 +37,9 @@ export default function GradingResult({ result }: GradingResultProps) {
                         {sq.rubricResults.map((rubric, idx) => (
                             <div
                                 key={idx}
-                                className={`rubric-item ${rubric.met ? 'rubric-met' : 'rubric-not-met'}`}
+                                className={`rubric-item ${rubric.status === 'met' ? 'rubric-met' : rubric.status === 'partially_met' ? 'rubric-partially-met' : 'rubric-not-met'}`}
                             >
-                                <span className="rubric-icon">{rubric.met ? '✅' : '❌'}</span>
+                                <span className="rubric-icon">{rubric.status === 'met' ? '✅' : rubric.status === 'partially_met' ? '⚠️' : '❌'}</span>
                                 <span className="rubric-name">{rubric.criterionName}</span>
                                 <span className="rubric-score">
                                     {rubric.awardedScore}/{rubric.maxScore}

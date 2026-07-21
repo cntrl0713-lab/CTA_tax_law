@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai'
 import type { ProblemWithDetails } from '@/types/db'
 import type { SubquestionAnswer, GradeResponse, SubquestionResult } from '@/types/grading'
 import { isLocallySkippable, MIN_GRADABLE_ANSWER_LENGTH } from '@/lib/grading-skip'
@@ -53,6 +53,11 @@ const MIN_EVIDENCE_QUOTE_LENGTH = 6 // 정규화 후 최소 글자 수 (조사 1
 // 인용문이 답안 전체와 거의 같아도 "복붙 방지"로 취급하지 않는다: 한 물음의 답안이 짧고
 // 특정 루브릭 한 개만 다루는 경우(예: 판례 법리만 서술) 답안 전체를 인용하는 것이 정확한
 // 근거일 수 있음을 실측으로 확인했음 — 답안 전체 복붙 여부만으로는 무의미 근거를 판별할 수 없음
+
+export const FORCED_ZERO_SUFFIX = ' (안내: 근거 문장을 답안에서 확인할 수 없어 시스템에 의해 일부 채점 결과가 0점 처리되었습니다.)'
+// 교정 재시도로 점수·판정이 실제로 바뀌었는데 모델이 재작성 피드백(revisedFeedback, optional)을
+// 생략한 경우, 1차 피드백이 바뀐 점수와 모순되지 않도록 덧붙이는 중립 안내. 점수 하락·상승 양쪽을 포괄한다.
+export const SCORE_ADJUSTED_NOTICE = ' (안내: 채점 검증 과정에서 일부 기준의 점수가 조정되었습니다. 위 항목별 점수를 기준으로 확인해 주세요.)'
 
 type ParsedGradeResult = Omit<GradeResponse, 'problemId' | 'maxScore' | '_diagnostics'>
 
@@ -116,7 +121,7 @@ function normalizeScoresAgainstRubrics(
                 )
             }
             const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
-            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 7: "완전히 충족했으면 met").
+            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 6: "완전히 충족했으면 met").
             // partially_met만 [0, maxScore]로 클램프. (실측: 결론을 근거보다 먼저 서술하는 두괄식
             // 답안에서, 근거 인용은 정답과 정확히 일치하는데도 status=met이면서 부분 점수만 주는
             // 사례를 확인 — 서술 순서라는 무관한 요인으로 점수만 깎이고 라벨은 정직하게 유지된 것.
@@ -128,8 +133,10 @@ function normalizeScoresAgainstRubrics(
                         ? maxScore
                         : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
-            // 규칙 7의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
-            const status = awardedScore === 0 ? 'unmet' : rr.status
+            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리.
+            // 대칭 케이스(실측, 문제57 강한 답안 회귀 2026-07-21): 만점인데 status가 met이 아닌 경우
+            // (예: partially_met+만점)도 같은 규칙("완전히 충족했으면 met")에 맞춰 라벨만 met으로 정리.
+            const status = awardedScore === 0 ? 'unmet' : awardedScore === maxScore ? 'met' : rr.status
             return { ...rr, maxScore, awardedScore, status }
         })
 
@@ -295,6 +302,7 @@ const CORRECTION_SCHEMA = {
                 required: ['subquestionNumber', 'criterionName', 'evidenceQuote', 'status', 'awardedScore'],
             },
         },
+        revisedFeedback: { type: Type.STRING, description: '점수 변경을 반영하여 새롭게 작성한 물음별 피드백 (공백 포함 220자 이내)' },
     },
     required: ['corrections'],
 }
@@ -319,7 +327,9 @@ function buildCorrectionRequest(contradictions: Contradiction[]): string {
     return `방금 채점한 결과 중 아래 채점 기준들의 점수 판정을 다시 확인해야 합니다.
 ${lines.join('\n')}
 
-이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과만 corrections 배열로 반환하세요.
+이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과(corrections)를 반환하세요.
+만약 교정 결과 점수(awardedScore)나 판정(status)이 원래 결과와 달라지는 항목이 있다면, 바뀐 점수 상황을 반영하여 새롭게 수정한 220자 이내의 종합 피드백(revisedFeedback)을 선택적으로 함께 작성해 주세요. (점수나 판정이 바뀌지 않는다면 생략 가능합니다.)
+- revisedFeedback을 작성할 경우 답안 전체에 대한 종합적인 피드백으로 작성하되, 재채점·교정·재검토 과정을 뜻하는 말은 절대 쓰지 말고 한 번에 완벽하게 채점한 것처럼 자연스럽게 작성하세요.
 - 다른 물음이나 다른 채점 기준의 판정에 얽매이지 말고, 지금 재검토하는 기준 하나만 놓고 이 물음의 답안을 독립적으로 다시 읽으세요.
 - 답안에 실제로 있는 문장을 그대로 evidenceQuote로 인용할 수 있는 경우에만 met 또는 partially_met과 0보다 큰 점수를 부여하세요.
 - 답안에 해당 내용이 전혀 없다면 반드시 status를 unmet, awardedScore를 0, evidenceQuote를 빈 문자열로 하세요.
@@ -327,14 +337,17 @@ ${lines.join('\n')}
 }
 
 /**
- * 교정 응답의 corrections를 원본 결과에 병합합니다. 모델이 무엇을 반환하든, 애초에 모순으로
- * 식별된 (물음, 기준) 키에 해당하는 항목만 반영합니다 — 그 외 물음/기준/feedback/총평은
- * 1차 결과 그대로 유지되어 무관한 항목에 대한 부수 피해를 코드 수준에서 원천 차단합니다.
+ * 교정 응답의 corrections를 원본 결과에 병합합니다. 애초에 모순으로 식별된 기준만 반영하며,
+ * status나 awardedScore가 실제로 변한 물음에 한해 피드백을 정합화합니다: 모델이 revisedFeedback을
+ * 주면 통째로 교체하고, (optional이라) 생략했으면 스테일 피드백이 바뀐 점수와 모순되지 않도록
+ * 중립 안내(SCORE_ADJUSTED_NOTICE)를 덧붙여, 피드백-점수 정합을 모델 준수와 무관하게 코드가
+ * 보장합니다. 점수·판정이 안 바뀐 물음은 1차 피드백을 그대로 유지합니다.
  */
-function applyCorrections(
+export function applyCorrections(
     result: ParsedGradeResult,
     contradictions: Contradiction[],
-    corrections: Correction[]
+    corrections: Correction[],
+    revisedFeedback?: string
 ): ParsedGradeResult {
     const key = (subquestionNumber: number, criterionName: string) =>
         `${subquestionNumber}::${normalizeForEvidenceMatch(criterionName)}`
@@ -348,22 +361,36 @@ function applyCorrections(
     return {
         ...result,
         subquestions: result.subquestions.map((sq) => {
+            let changed = false
             const rubricResults = sq.rubricResults.map((rr) => {
                 const c = byKey.get(key(sq.number, rr.criterionName))
                 if (!c) return rr
+                if (c.status !== rr.status || c.awardedScore !== rr.awardedScore) {
+                    changed = true
+                }
                 return { ...rr, evidenceQuote: c.evidenceQuote, status: c.status, awardedScore: c.awardedScore }
             })
-            return { ...sq, rubricResults }
+            const currentFeedback = sq.feedback ?? ''
+            let feedback = currentFeedback
+            if (changed) {
+                if (revisedFeedback && revisedFeedback.trim()) {
+                    feedback = revisedFeedback
+                } else if (!currentFeedback.includes(SCORE_ADJUSTED_NOTICE)) {
+                    feedback = currentFeedback + SCORE_ADJUSTED_NOTICE
+                }
+            }
+            return { ...sq, rubricResults, feedback }
         }),
     }
 }
 
 /**
  * 재시도 이후에도 남은 모순에 대해, 해당 루브릭 결과만 강제로 awardedScore=0, status='unmet'으로
- * 되돌립니다(evidence_present_but_unmet의 경우 이미 0점/unmet이므로 사실상 유지). 합산 재계산은
+ * 되돌립니다(evidence_present_but_unmet의 경우 이미 0점/unmet이므로 사실상 유지). 실제로 점수가
+ * 강제 정정된 경우 피드백 끝에 안내 문구(FORCED_ZERO_SUFFIX)를 부착합니다. 합산 재계산은
  * 호출부에서 normalizeScoresAgainstRubrics를 다시 호출해 수행합니다(단일 책임 유지). 순수 함수입니다.
  */
-function forceZeroOutContradictions(
+export function forceZeroOutContradictions(
     result: ParsedGradeResult,
     contradictions: Contradiction[]
 ): ParsedGradeResult {
@@ -373,14 +400,23 @@ function forceZeroOutContradictions(
 
     return {
         ...result,
-        subquestions: result.subquestions.map((sq) => ({
-            ...sq,
-            rubricResults: sq.rubricResults.map((rr) =>
-                flagged.has(`${sq.number}::${rr.criterionName}`)
-                    ? { ...rr, awardedScore: 0, status: 'unmet' as const }
-                    : rr
-            ),
-        })),
+        subquestions: result.subquestions.map((sq) => {
+            let forcedCount = 0
+            const rubricResults = sq.rubricResults.map((rr) => {
+                if (flagged.has(`${sq.number}::${rr.criterionName}`)) {
+                    if (rr.status !== 'unmet' || rr.awardedScore > 0) forcedCount++
+                    return { ...rr, awardedScore: 0, status: 'unmet' as const }
+                }
+                return rr
+            })
+            const currentFeedback = sq.feedback ?? ''
+            const needsSuffix = forcedCount > 0 && !currentFeedback.includes(FORCED_ZERO_SUFFIX)
+            return {
+                ...sq,
+                rubricResults,
+                ...(needsSuffix ? { feedback: currentFeedback + FORCED_ZERO_SUFFIX } : {})
+            }
+        }),
     }
 }
 
@@ -393,14 +429,16 @@ const systemPrompt = `당신은 세무사 시험 채점 전문가입니다.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 논리 구조를 중심으로 평가하세요.
 5. 채점 기준은 "문구의 일치"가 아니라 "요건 충족의 실질"입니다. 수험생의 표현·어휘·문장 순서가 채점 기준 설명이나 모범답안 예시와 다르더라도, 법리적으로 같은 의미를 담고 있다면 만점(met)을 주세요. 결론을 근거보다 먼저 쓰는 등 서술 순서가 다르다는 이유만으로, 또는 모범답안과 다른 단어를 썼다는 이유만으로 감점하지 마세요.
-6. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요.
-7. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
+6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요. 
+7. 물음별 피드백은 공백 포함 220자 이내로 작성하되, 미충족(unmet) 또는 부분충족(partially_met)된 기준이 있다면 해당 기준명과 연결하여 "답안에 무엇을 추가/수정/구체화해야 하는지"를 실행 가능한 지시문 형태로 구체적으로 서술하세요. 단, 답안에 실제로 없는 내용만 누락으로 지적해야 합니다(규칙 11·12와 동일). 모든 기준이 만점(met)인 경우에는 억지로 수정 제안을 지어내지 말고 칭찬 위주로 서술하세요.
 8. 핵심 요건(수치, 법적 절차 요건 등)의 실질적 내용이 답안에 전혀 담겨 있지 않은 경우에만 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오. 서술이 간결하거나 모범답안과 다른 방식·순서로 쓰였다는 이유만으로 만점을 깎지 마세요 — 표현 방식이 아니라 요건의 실질적 누락 여부로만 판단하세요.
 9. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
 10. 모든 응답은 한국어로 작성하세요.
 11. 각 채점 기준의 evidenceQuote에는 반드시 수험생 답안 원문에 실제로 있는 문장/구절을 그대로(축약·의역 없이) 옮겨 적으세요. 답안에 없는 내용을 근거로 점수를 주지 마세요.
 12. 답안에 해당 기준을 뒷받침하는 문장이 전혀 없다면, 다른 부분이 아무리 훌륭해도 그 기준은 반드시 unmet과 0점으로 처리하고 evidenceQuote는 빈 문자열로 남기세요. 근거를 인용할 수 없는 기준에 점수를 부여하는 것은 심각한 채점 오류입니다. (단, 규칙 5에 따라 표현이 다를 뿐 같은 의미의 문장이 답안에 있다면 이는 "근거가 있는" 경우이지 "근거가 없는" 경우가 아닙니다.)
-13. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.`
+13. 각 채점 기준은 반드시 서로 독립적으로 판단하세요. 같은 물음 안의 다른 채점 기준에 대한 서술이 부족하거나 아예 없더라도, 지금 판단 중인 기준을 뒷받침하는 문장이 답안에 실제로 있다면 그 기준에는 정당하게 점수를 부여해야 합니다. 답안 전체나 물음 전체의 인상(예: "이 물음은 답안이 부실하다")만으로 개별 기준들을 일괄적으로 unmet 처리하지 마세요 — 기준마다 답안 전체를 처음부터 다시 확인하세요.
+14. 각 기준의 "모범답안"(example_answer_text)은 그 기준이 요구하는 필수적 실질 제약이 무엇인지 보여주는 기준선입니다. met(만점)을 주기 전에, 모범답안에 명시된 구체적 제약 — 특히 수치·기간·기한·범위(예: "5년 이내", "2년 이내", "체감률", "3개월 이하") — 이 수험생 답안에 실질적으로 담겨 있는지 하나하나 대조하세요. 그런 제약 중 하나라도 답안에 (다른 표현으로도) 담겨 있지 않다면, 나머지를 아무리 잘 썼더라도 그 기준은 met이 아니라 partially_met으로 판단하세요. 이것이 규칙 8의 "실질적 누락"을 판정하는 구체적 방법입니다. 단, 모범답안이 여러 예시를 "등"으로 줄여 나열한 경우(어느 하나만 충족해도 되는 선택적·예시적 나열)에는 그 나열 항목 전부를 요구하지 말고, 수험생이 그중 하나라도 정확히 들었다면 그 부분은 충족된 것으로 보세요 — 이때 나열의 불완전성은 누락이 아닙니다. (규칙 5와 충돌하지 않습니다: 규칙 5는 "같은 실질을 다른 단어로 쓴 것"을 감점하지 말라는 것이고, 이 규칙 14는 "모범답안에 있는 실질 제약 자체가 답안에 없는 것"을 누락으로 잡으라는 것입니다.)
+15. 규칙 14의 "제약 대조"는 met을 partially_met으로 낮추는 방향(요건을 잘 썼지만 필수 제약 하나가 빠진 경우)으로만 사용하세요. 이 규칙을 근거로 이미 방향이 틀린 답안의 점수를 올려 주지 마세요. 특히 결론·주장·사안 포섭에서 답안이 모범답안과 **정반대의 방향**(예: "적법"을 "위법"으로, "타당"을 "타당하지 않다"로, "해당한다"를 "해당하지 않는다"로 뒤집음)을 취한 경우에는, 주제어나 인용 문구가 모범답안과 겹치더라도 그 기준은 부분점수를 주지 말고 unmet(0점)으로 처리하세요 — 결론의 방향이 반대인 것은 "부분적으로 맞은" 것이 아니라 "틀린" 것입니다.`
 
 /** 물음마다 공통으로 필요한 문제 배경(제목·배점·사실관계·쟁점) 블록. 물음 개수만큼 반복 전송된다. */
 function buildFixedOverhead(problem: ProblemWithDetails): string {
@@ -473,7 +511,7 @@ const SUBQUESTION_SCHEMA = {
         number: { type: Type.NUMBER, description: '물음 번호' },
         awardedScore: { type: Type.NUMBER, description: '획득 점수' },
         maxScore: { type: Type.NUMBER, description: '배점' },
-        feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
+        feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 220자 이내)' },
         rubricResults: { type: Type.ARRAY, items: RUBRIC_RESULT_SCHEMA },
     },
     required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
@@ -497,7 +535,7 @@ async function gradeSingleSubquestion(
     problem: ProblemWithDetails,
     sq: ProblemWithDetails['cta_subquestion'][number],
     answerText: string | undefined
-): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[] } }> {
+): Promise<{ subquestion: SubquestionResult; diagnostics?: { retried: boolean; contradictions: string[]; forced?: boolean } }> {
     const skipCheck = isLocallySkippable(answerText)
     if (skipCheck.skip) {
         const cleanLen = (answerText ?? '').trim().length
@@ -535,12 +573,12 @@ async function gradeSingleSubquestion(
         responseMimeType: 'application/json' as const,
         temperature: 0,
         // flash-lite는 thinking이 기본 비활성 — 루브릭 대조 정확도를 위해 활성화
-        thinkingConfig: { thinkingBudget: 1024 },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
         responseSchema: SUBQUESTION_SCHEMA,
     }
 
     const response = await generateContentWithRetry({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         contents: userPrompt,
         config,
     })
@@ -569,7 +607,7 @@ async function gradeSingleSubquestion(
         // 스코프 축소형 교정 재시도: 이 물음의 1차 대화만 재사용해, 모순이 발견된 기준만 재판정받고
         // 코드에서 병합합니다 — 다른 물음은 애초에 이 대화에 포함된 적이 없습니다.
         const correctionResponse = await generateContentWithRetry({
-            model: 'gemini-2.5-flash-lite',
+            model: 'gemini-3.1-flash-lite',
             contents: [
                 { role: 'user', parts: [{ text: userPrompt }] },
                 { role: 'model', parts: [{ text }] },
@@ -579,16 +617,16 @@ async function gradeSingleSubquestion(
                 systemInstruction: systemPrompt,
                 responseMimeType: 'application/json' as const,
                 temperature: 0,
-                thinkingConfig: { thinkingBudget: 1024 },
+                thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
                 responseSchema: CORRECTION_SCHEMA,
             },
         })
         const correctionText = correctionResponse.text
         if (!correctionText) throw new Error('교정 재시도 응답이 비어 있습니다.')
 
-        const { corrections } = JSON.parse(correctionText) as { corrections: Correction[] }
+        const { corrections, revisedFeedback } = JSON.parse(correctionText) as { corrections: Correction[]; revisedFeedback?: string }
         let patched = normalizeScoresAgainstRubrics(
-            applyCorrections(normalized, contradictions, corrections),
+            applyCorrections(normalized, contradictions, corrections, revisedFeedback),
             problem
         )
         const remaining = [...findPhantomEvidence(patched, answers), ...findSuppressedEvidence(patched, answers)]
@@ -598,16 +636,18 @@ async function gradeSingleSubquestion(
             patched = normalizeScoresAgainstRubrics(forceZeroOutContradictions(patched, remaining), problem)
         }
         normalized = patched
+        const forcedAny = normalized.subquestions.some((s) => (s.feedback ?? '').includes(FORCED_ZERO_SUFFIX))
         return {
             subquestion: normalized.subquestions[0],
-            diagnostics: { retried: true, contradictions: describe(remaining.length > 0 ? remaining : contradictions) },
+            diagnostics: { retried: true, contradictions: describe(remaining.length > 0 ? remaining : contradictions), forced: forcedAny },
         }
     } catch (err) {
         console.warn(`[grading] 물음 ${sq.number} 유령 근거 교정 재시도 실패, 원본 결과에서 강제 0점 처리:`, err, contradictions)
         normalized = normalizeScoresAgainstRubrics(forceZeroOutContradictions(normalized, contradictions), problem)
+        const forcedAny = normalized.subquestions.some((s) => (s.feedback ?? '').includes(FORCED_ZERO_SUFFIX))
         return {
             subquestion: normalized.subquestions[0],
-            diagnostics: { retried: false, contradictions: describe(contradictions) },
+            diagnostics: { retried: false, contradictions: describe(contradictions), forced: forcedAny },
         }
     }
 }
@@ -630,14 +670,15 @@ ${summary}
 
 총점: ${totalScore}/${problem.total_score}점
 
-위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 잘한 점과 부족한 점을 균형 있게 반영하세요.`
+위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 물음별 피드백의 구체적인 수정 지시를 인용하지 말고 전체적인 경향만 요약하여 잘한 점과 부족한 점을 균형 있게 반영하세요.`
 
     const response = await generateContentWithRetry({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         contents: prompt,
         config: {
             responseMimeType: 'application/json' as const,
             temperature: 0,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
             responseSchema: OVERALL_COMMENT_SCHEMA,
         },
     })
@@ -729,14 +770,15 @@ export async function gradeProblem(
         })
         .map((sq) => sq.number)
 
-    const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[] } => !!d)
+    const diagnosticsList = results.map((r) => r.diagnostics).filter((d): d is { retried: boolean; contradictions: string[]; forced?: boolean } => !!d)
     const diagnostics: GradeResponse['_diagnostics'] = {
         retried: diagnosticsList.some((d) => d.retried),
         contradictions: diagnosticsList.flatMap((d) => d.contradictions),
+        ...(diagnosticsList.some((d) => d.forced) ? { forced: true } : {}),
         ...(skippedSubquestions.length > 0 ? { skippedSubquestions } : {}),
     }
-    // retried=false + contradictions=[] + skippedSubquestions=없음 이면 기록 생략
-    const hasDiagnostics = diagnostics.retried || diagnostics.contradictions.length > 0 || skippedSubquestions.length > 0
+    // retried=false + contradictions=[] + skippedSubquestions=없음 + forced=false 이면 기록 생략
+    const hasDiagnostics = diagnostics.retried || diagnostics.contradictions.length > 0 || skippedSubquestions.length > 0 || diagnostics.forced
 
     return {
         problemId: problem.id,
