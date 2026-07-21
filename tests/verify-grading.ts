@@ -1550,33 +1550,13 @@ function testPureFunctions() {
     console.log('PASS: 순수 함수 7종 단위 테스트 완료\n')
 }
 
-async function main() {
-    testPureFunctions()
-
-    const fixture = process.argv.includes('--problem9')
-        ? PROBLEM9_FIXTURE
-        : process.argv.includes('--problem46')
-            ? PROBLEM46_FIXTURE
-            : process.argv.includes('--problem51')
-                ? PROBLEM51_FIXTURE
-                : process.argv.includes('--problem22')
-                    ? PROBLEM22_FIXTURE
-                    : process.argv.includes('--problem57')
-                        ? PROBLEM57_FIXTURE
-                        : PROBLEM1_FIXTURE
-    const mode: Mode = process.argv.includes('--half')
-        ? 'half'
-        : process.argv.includes('--incomplete')
-            ? 'incomplete'
-            : process.argv.includes('--ambiguous')
-                ? 'ambiguous'
-                : process.argv.includes('--overgeneralized')
-                    ? 'overgeneralized'
-                    : process.argv.includes('--partial')
-                        ? 'partial'
-                        : process.argv.includes('--merged')
-                            ? 'merged'
-                            : 'strong'
+/**
+ * 픽스처 하나 × 모드 하나를 실제로 채점하고 검증 체크 목록을 반환한다.
+ * verbose=true(기본, 기존 단일 실행 커맨드용)면 지금까지와 동일하게 물음별 상세·피드백·
+ * PASS/FAIL 로그를 전부 출력한다. verbose=false(--all 전체 실행용)는 API 호출·판정 로직은
+ * 완전히 동일하되 콘솔 출력을 생략해, 27개 조합을 한 번에 돌려도 로그가 감당 가능한 양으로 유지된다.
+ */
+async function runOne(fixture: ProblemFixture, mode: Mode, verbose = true): Promise<{ name: string; pass: boolean }[]> {
     const modeLabel =
         mode === 'half'
             ? '절반 답안(비례성 확인)'
@@ -1591,36 +1571,40 @@ async function main() {
                             : mode === 'merged'
                                 ? '한 문장 답안(여러 루브릭을 문장 경계 없이 압축)'
                                 : '재현(충실한 답안)'
-    console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
+    if (verbose) console.log(`\n=== ${fixture.label} 채점 검증: ${modeLabel} 모드 ===\n`)
 
     const answers = buildAnswers(fixture, mode)
     const result = await gradeProblem(fixture.problem, answers)
 
-    console.log(`총점: ${result.totalScore} / ${result.maxScore}`)
-    console.log(`총평: ${result.overallComment}`)
-    if (result._diagnostics) {
-        console.log(`진단(유령 근거 보정): retried=${result._diagnostics.retried}`)
-        for (const c of result._diagnostics.contradictions) console.log(`  - ${c}`)
+    if (verbose) {
+        console.log(`총점: ${result.totalScore} / ${result.maxScore}`)
+        console.log(`총평: ${result.overallComment}`)
+        if (result._diagnostics) {
+            console.log(`진단(유령 근거 보정): retried=${result._diagnostics.retried}`)
+            for (const c of result._diagnostics.contradictions) console.log(`  - ${c}`)
+        }
+        console.log('')
     }
-    console.log('')
 
     const answerByNum = new Map(answers.map((a) => [a.subquestionNumber, a.answerText]))
     const falseOmissionsAll: { sq: number; phrases: string[] }[] = []
 
     for (const sq of result.subquestions) {
-        console.log(`물음 ${sq.number}: ${sq.awardedScore} / ${sq.maxScore}점`)
-        for (const rr of sq.rubricResults) {
-            const status = (rr as unknown as { status?: string }).status ?? '(status 없음)'
-            const quote = (rr as unknown as { evidenceQuote?: string }).evidenceQuote
-            console.log(
-                `  - ${rr.criterionName}: ${rr.awardedScore}/${rr.maxScore} [${status}]${quote ? ` 근거: "${quote}"` : ''
-                }`
-            )
+        if (verbose) {
+            console.log(`물음 ${sq.number}: ${sq.awardedScore} / ${sq.maxScore}점`)
+            for (const rr of sq.rubricResults) {
+                const status = (rr as unknown as { status?: string }).status ?? '(status 없음)'
+                const quote = (rr as unknown as { evidenceQuote?: string }).evidenceQuote
+                console.log(
+                    `  - ${rr.criterionName}: ${rr.awardedScore}/${rr.maxScore} [${status}]${quote ? ` 근거: "${quote}"` : ''
+                    }`
+                )
+            }
+            console.log(`  피드백: ${sq.feedback}`)
         }
-        console.log(`  피드백: ${sq.feedback}`)
         const fo = findFalseOmissions(sq.feedback, answerByNum.get(sq.number) || '')
         if (fo.length) falseOmissionsAll.push({ sq: sq.number, phrases: fo })
-        console.log('')
+        if (verbose) console.log('')
     }
 
     // ── 판정 ──
@@ -1864,19 +1848,157 @@ async function main() {
         })
     }
 
-    console.log('─'.repeat(50))
-    let allPass = true
-    for (const c of checks) {
-        console.log(`${c.pass ? 'PASS' : 'FAIL'}: ${c.name}`)
-        if (!c.pass) allPass = false
-    }
-    if (falseOmissionsAll.length) {
-        console.log('\n⚠ 허위 누락 지적 감지:')
-        for (const f of falseOmissionsAll) {
-            console.log(`  물음 ${f.sq}: "${f.phrases.join('", "')}" — 답안에 실제로 존재함`)
+    if (verbose) {
+        console.log('─'.repeat(50))
+        for (const c of checks) {
+            console.log(`${c.pass ? 'PASS' : 'FAIL'}: ${c.name}`)
+        }
+        if (falseOmissionsAll.length) {
+            console.log('\n⚠ 허위 누락 지적 감지:')
+            for (const f of falseOmissionsAll) {
+                console.log(`  물음 ${f.sq}: "${f.phrases.join('", "')}" — 답안에 실제로 존재함`)
+            }
         }
     }
-    process.exit(allPass ? 0 : 1)
+    return checks
+}
+
+// ── --all 전용: 알려진(수용된) 실패 목록 ──
+// tests/README.md의 "미해결로 남은 이슈"·"알려진 한계"에 문서화된, 회귀가 아닌 상시 실패들.
+// --all 모드는 이 목록에 걸리는 FAIL을 "알려진 실패"로 별도 집계하고, 종료 코드에는 반영하지
+// 않는다(그렇지 않으면 --all은 이 문서화된 항목들 때문에 항상 실패로 끝나 신호로서 무의미해짐).
+// 단일 커맨드(예: npx ... --problem1 --partial) 실행 시에는 이 목록을 적용하지 않고 기존과
+// 동일하게 FAIL 하나라도 있으면 종료 코드 1을 낸다 — 문서에 이미 나온 대로 사용자가 직접 판단.
+interface KnownException {
+    fixtureLabelIncludes: string
+    mode: Mode
+    checkNameIncludes: string
+    note: string
+}
+// 주의: "피드백 구체성" 실패는 여기 등록하지 않는다 — runAll()에서 fixture/mode 무관하게 일괄
+// "알려진 실패"로 분류하기 때문(그 트레이드오프는 README "알려진 한계"에 문서화됨).
+// 문제9 partial "공급가액 산정방법"의 과다 관대화는 2026-07-21 규칙 14 추가로 수정되어 목록에서
+// 뺐다 — 이후 다시 met으로 회귀하면 "예상 밖 실패"로 떠서 알림이 가도록 의도적으로 미등록.
+const KNOWN_EXCEPTIONS: KnownException[] = [
+    { fixtureLabelIncludes: '문제 1(', mode: 'partial', checkNameIncludes: '재산가치 증가사유 발생 요건', note: '과다 관대화, 규칙 14로도 미해결(답안이 사유를 길게 나열해 "5년 이내" 누락이 묻힘 — README "미해결로 남은 이슈")' },
+    { fixtureLabelIncludes: '문제 1(', mode: 'partial', checkNameIncludes: '판례 법리', note: '과다 관대화, 규칙 14로도 미해결(README "미해결로 남은 이슈")' },
+    { fixtureLabelIncludes: '문제 1(', mode: 'partial', checkNameIncludes: '총점 감점이 대상 루브릭들의 배점 합', note: '위 두 항목(과다 관대화)의 다운스트림 결과 — 대상 루브릭이 met으로 튀어 총점이 만점 그대로 남음' },
+    { fixtureLabelIncludes: '문제 46(', mode: 'partial', checkNameIncludes: '공장이전 과세특례 요건', note: '과다 관대화, 규칙 14로도 미해결(답안이 요건을 풍부하게 나열해 "선이전 후양도 2년 이내" 누락이 묻힘 — 문제1과 같은 계열)' },
+    { fixtureLabelIncludes: '문제 1(', mode: 'ambiguous', checkNameIncludes: '판례 법리', note: '완곡체 과도엄격, ~90% force-zero (2026-07-15 수용)' },
+    { fixtureLabelIncludes: '문제 46(', mode: 'ambiguous', checkNameIncludes: '감면대상 소득비율 산출', note: '순수 LLM 인식 실패로 수용, 재현성 있으면 조사 대상' },
+    { fixtureLabelIncludes: '문제 51(', mode: 'strong', checkNameIncludes: '루브릭 합산', note: 'DB 루브릭 배점이 물음 배점을 초과하는 기존 데이터 결함, 코드 무관' },
+    { fixtureLabelIncludes: '문제 51(', mode: 'overgeneralized', checkNameIncludes: '"결론" 기준이 역전된 결론에 met', note: '버그#12, 근거 인용 관련성 미검증이라는 기존 한계가 새 모델에서도 재현 — 미해결' },
+    { fixtureLabelIncludes: '문제 57(', mode: 'strong', checkNameIncludes: '충실한 답안 총점이 만점의 84%', note: '과소평가 의심(도메인 판단, 100% 확신 아님) — 의도적으로 FAIL 유지' },
+]
+
+/** 6개 픽스처 × 각 픽스처가 실제로 지원하는 모드(정의된 답안 세트 기준) 전체를 순차 실행. */
+async function runAll() {
+    const fixtures = [PROBLEM1_FIXTURE, PROBLEM9_FIXTURE, PROBLEM46_FIXTURE, PROBLEM51_FIXTURE, PROBLEM22_FIXTURE, PROBLEM57_FIXTURE]
+    const results: { fixture: ProblemFixture; mode: Mode; checks: { name: string; pass: boolean }[] }[] = []
+
+    for (const fixture of fixtures) {
+        const modes: Mode[] = ['strong', 'incomplete']
+        if (fixture.halfAnswers) modes.push('half')
+        if (fixture.ambiguousAnswers) modes.push('ambiguous')
+        if (fixture.overgeneralizedAnswers) modes.push('overgeneralized')
+        if (fixture.partialAnswers) modes.push('partial')
+        if (fixture.mergedAnswers) modes.push('merged')
+
+        for (const mode of modes) {
+            process.stdout.write(`실행 중: ${fixture.label} [${mode}] ... `)
+            const checks = await runOne(fixture, mode, false)
+            const passCount = checks.filter((c) => c.pass).length
+            console.log(`${passCount}/${checks.length} PASS`)
+            results.push({ fixture, mode, checks })
+        }
+    }
+
+    console.log('\n' + '═'.repeat(60))
+    console.log('전체 종합 결과 (--all)')
+    console.log('═'.repeat(60))
+
+    let totalChecks = 0
+    let totalPass = 0
+    const known: string[] = []
+    const unexpected: string[] = []
+
+    for (const { fixture, mode, checks } of results) {
+        totalChecks += checks.length
+        totalPass += checks.filter((c) => c.pass).length
+        for (const c of checks) {
+            if (c.pass) continue
+            // "피드백 구체성" 체크는 README "알려진 한계"에 이미 "허위 음성 안전 방향으로 수용"으로
+            // 문서화된 트레이드오프다. 실패 여부가 모델이 그때그때 만드는 피드백 문장의 어미에 따라
+            // 물음·모드를 가리지 않고 들쭉날쭉하므로, 특정 (문제,모드,물음)을 KNOWN_EXCEPTIONS에
+            // 하나하나 등록하는 것은 무의미하다(등록 안 한 곳에서 또 떠서 --all 종료 코드가 불안정해짐).
+            // 따라서 이 체크의 실패는 fixture/mode와 무관하게 일괄 "알려진 실패"로 분류한다 —
+            // 체크 자체는 계속 실행·출력되므로 사람은 목록에서 볼 수 있고, 종료 코드만 오염시키지 않는다.
+            const isFeedbackSpecificity = c.name.includes('피드백 구체성')
+            const match = KNOWN_EXCEPTIONS.find(
+                (k) => fixture.label.includes(k.fixtureLabelIncludes) && k.mode === mode && c.name.includes(k.checkNameIncludes)
+            )
+            if (isFeedbackSpecificity) {
+                known.push(`  [알려진 실패] ${fixture.label} [${mode}] ${c.name}\n    사유: 피드백 구체성 정규식의 허위 음성(README "알려진 한계" 문서화된 트레이드오프) — 물음 무관 일괄 수용`)
+            } else if (match) {
+                known.push(`  [알려진 실패] ${fixture.label} [${mode}] ${c.name}\n    사유: ${match.note}`)
+            } else {
+                unexpected.push(`  [예상 밖 실패] ${fixture.label} [${mode}] ${c.name}`)
+            }
+        }
+    }
+
+    console.log(`\n총 ${totalChecks}개 체크 중 ${totalPass}개 통과 (${((100 * totalPass) / totalChecks).toFixed(1)}%)`)
+
+    if (known.length) {
+        console.log(`\n알려진 실패 ${known.length}건 (회귀 아님 — tests/README.md "미해결로 남은 이슈"/"알려진 한계" 참고):`)
+        known.forEach((k) => console.log(k))
+    }
+
+    if (unexpected.length) {
+        console.log(`\n⚠ 예상 밖 실패 ${unexpected.length}건 — 회귀 의심, 확인 필요:`)
+        unexpected.forEach((u) => console.log(u))
+    } else {
+        console.log('\n예상 밖 실패 없음 — 알려진 항목을 제외하면 전부 통과.')
+    }
+
+    process.exit(unexpected.length === 0 ? 0 : 1)
+}
+
+async function main() {
+    testPureFunctions()
+
+    if (process.argv.includes('--all')) {
+        await runAll()
+        return
+    }
+
+    const fixture = process.argv.includes('--problem9')
+        ? PROBLEM9_FIXTURE
+        : process.argv.includes('--problem46')
+            ? PROBLEM46_FIXTURE
+            : process.argv.includes('--problem51')
+                ? PROBLEM51_FIXTURE
+                : process.argv.includes('--problem22')
+                    ? PROBLEM22_FIXTURE
+                    : process.argv.includes('--problem57')
+                        ? PROBLEM57_FIXTURE
+                        : PROBLEM1_FIXTURE
+    const mode: Mode = process.argv.includes('--half')
+        ? 'half'
+        : process.argv.includes('--incomplete')
+            ? 'incomplete'
+            : process.argv.includes('--ambiguous')
+                ? 'ambiguous'
+                : process.argv.includes('--overgeneralized')
+                    ? 'overgeneralized'
+                    : process.argv.includes('--partial')
+                        ? 'partial'
+                        : process.argv.includes('--merged')
+                            ? 'merged'
+                            : 'strong'
+
+    const checks = await runOne(fixture, mode, true)
+    process.exit(checks.every((c) => c.pass) ? 0 : 1)
 }
 
 // require.main===module 가드: 이 파일을 다른 진단 스크립트에서 픽스처(PROBLEM*_FIXTURE)만
