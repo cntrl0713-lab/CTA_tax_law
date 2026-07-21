@@ -121,7 +121,7 @@ function normalizeScoresAgainstRubrics(
                 )
             }
             const maxScore = dbRubric ? dbRubric.max_score : rr.maxScore
-            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 7: "완전히 충족했으면 met").
+            // met=만점, unmet=0점은 정의상 고정(시스템 프롬프트 규칙 6: "완전히 충족했으면 met").
             // partially_met만 [0, maxScore]로 클램프. (실측: 결론을 근거보다 먼저 서술하는 두괄식
             // 답안에서, 근거 인용은 정답과 정확히 일치하는데도 status=met이면서 부분 점수만 주는
             // 사례를 확인 — 서술 순서라는 무관한 요인으로 점수만 깎이고 라벨은 정직하게 유지된 것.
@@ -133,7 +133,7 @@ function normalizeScoresAgainstRubrics(
                         ? maxScore
                         : round2(Math.min(Math.max(rr.awardedScore, 0), maxScore))
             // 역방향 라벨 불일치 교정: 0점인데 status가 unmet이 아니면(예: partially_met+0점)
-            // 규칙 7의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
+            // 규칙 6의 자체 정의("부분 점수조차 부여할 수 없으면 unmet")에 맞춰 라벨만 정리
             const status = awardedScore === 0 ? 'unmet' : rr.status
             return { ...rr, maxScore, awardedScore, status }
         })
@@ -300,7 +300,7 @@ const CORRECTION_SCHEMA = {
                 required: ['subquestionNumber', 'criterionName', 'evidenceQuote', 'status', 'awardedScore'],
             },
         },
-        revisedFeedback: { type: Type.STRING, description: '점수 변경을 반영하여 새롭게 작성한 물음별 피드백 (공백 포함 150자 이내)' },
+        revisedFeedback: { type: Type.STRING, description: '점수 변경을 반영하여 새롭게 작성한 물음별 피드백 (공백 포함 220자 이내)' },
     },
     required: ['corrections'],
 }
@@ -326,7 +326,7 @@ function buildCorrectionRequest(contradictions: Contradiction[]): string {
 ${lines.join('\n')}
 
 이 기준들만 답안을 처음부터 다시 확인해 정직하게 재평가하고, 정확히 이 ${contradictions.length}개 항목에 대한 교정 결과(corrections)를 반환하세요.
-만약 교정 결과 점수(awardedScore)나 판정(status)이 원래 결과와 달라지는 항목이 있다면, 바뀐 점수 상황을 반영하여 새롭게 수정한 150자 이내의 종합 피드백(revisedFeedback)을 선택적으로 함께 작성해 주세요. (점수나 판정이 바뀌지 않는다면 생략 가능합니다.)
+만약 교정 결과 점수(awardedScore)나 판정(status)이 원래 결과와 달라지는 항목이 있다면, 바뀐 점수 상황을 반영하여 새롭게 수정한 220자 이내의 종합 피드백(revisedFeedback)을 선택적으로 함께 작성해 주세요. (점수나 판정이 바뀌지 않는다면 생략 가능합니다.)
 - revisedFeedback을 작성할 경우 답안 전체에 대한 종합적인 피드백으로 작성하되, 재채점·교정·재검토 과정을 뜻하는 말은 절대 쓰지 말고 한 번에 완벽하게 채점한 것처럼 자연스럽게 작성하세요.
 - 다른 물음이나 다른 채점 기준의 판정에 얽매이지 말고, 지금 재검토하는 기준 하나만 놓고 이 물음의 답안을 독립적으로 다시 읽으세요.
 - 답안에 실제로 있는 문장을 그대로 evidenceQuote로 인용할 수 있는 경우에만 met 또는 partially_met과 0보다 큰 점수를 부여하세요.
@@ -427,8 +427,8 @@ const systemPrompt = `당신은 세무사 시험 채점 전문가입니다.
 3. 루브릭의 max_score를 초과하지 마세요.
 4. 논리 구조를 중심으로 평가하세요.
 5. 채점 기준은 "문구의 일치"가 아니라 "요건 충족의 실질"입니다. 수험생의 표현·어휘·문장 순서가 채점 기준 설명이나 모범답안 예시와 다르더라도, 법리적으로 같은 의미를 담고 있다면 만점(met)을 주세요. 결론을 근거보다 먼저 쓰는 등 서술 순서가 다르다는 이유만으로, 또는 모범답안과 다른 단어를 썼다는 이유만으로 감점하지 마세요.
-6. 피드백은 공백 포함 150자 이내로 어떤 부분이 좋았고 무엇이 부족한지 구체적으로 명시하세요.
-7. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요.
+6. 개별 채점 기준에 대해서는 수험생 답안이 기준을 완전히 충족했으면 met, 부분적으로 충족했으면 partially_met, 충족하지 못해 부분 점수조차 부여할 수 없으면 unmet으로 판단하세요. 
+7. 물음별 피드백은 공백 포함 220자 이내로 작성하되, 미충족(unmet) 또는 부분충족(partially_met)된 기준이 있다면 해당 기준명과 연결하여 "답안에 무엇을 추가/수정/구체화해야 하는지"를 실행 가능한 지시문 형태로 구체적으로 서술하세요. 단, 답안에 실제로 없는 내용만 누락으로 지적해야 합니다(규칙 11·12와 동일). 모든 기준이 만점(met)인 경우에는 억지로 수정 제안을 지어내지 말고 칭찬 위주로 서술하세요.
 8. 핵심 요건(수치, 법적 절차 요건 등)의 실질적 내용이 답안에 전혀 담겨 있지 않은 경우에만 부분 점수(partially_met) 또는 미충족(unmet) 처리를 하십시오. 서술이 간결하거나 모범답안과 다른 방식·순서로 쓰였다는 이유만으로 만점을 깎지 마세요 — 표현 방식이 아니라 요건의 실질적 누락 여부로만 판단하세요.
 9. 감점 요인이 있는 경우 피드백에 적은 문제점과 평가 점수가 논리적으로 모순되지 않도록 하십시오.
 10. 모든 응답은 한국어로 작성하세요.
@@ -507,7 +507,7 @@ const SUBQUESTION_SCHEMA = {
         number: { type: Type.NUMBER, description: '물음 번호' },
         awardedScore: { type: Type.NUMBER, description: '획득 점수' },
         maxScore: { type: Type.NUMBER, description: '배점' },
-        feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 150자 이내)' },
+        feedback: { type: Type.STRING, description: '물음별 피드백 (공백 포함 220자 이내)' },
         rubricResults: { type: Type.ARRAY, items: RUBRIC_RESULT_SCHEMA },
     },
     required: ['number', 'awardedScore', 'maxScore', 'feedback', 'rubricResults'],
@@ -666,7 +666,7 @@ ${summary}
 
 총점: ${totalScore}/${problem.total_score}점
 
-위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 잘한 점과 부족한 점을 균형 있게 반영하세요.`
+위 물음별 결과를 종합하여, 수험생에게 보여줄 전체 총평을 한국어로 한 문장(공백 포함 80자 이내)으로 간결하게 작성하세요. 물음별 피드백의 구체적인 수정 지시를 인용하지 말고 전체적인 경향만 요약하여 잘한 점과 부족한 점을 균형 있게 반영하세요.`
 
     const response = await generateContentWithRetry({
         model: 'gemini-2.5-flash-lite',

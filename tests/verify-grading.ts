@@ -980,6 +980,16 @@ function findFalseOmissions(feedback: string, answerText: string): string[] {
     return found
 }
 
+// 피드백 구체성(실행 가능한 수정 지시) 판정: 단순 동사 등장이 아니라, 그 동사가 "~하세요/~바랍니다"류
+// 지시문 어미와 짧은 거리 내에 결합된 경우만 인정한다. "수정신고"처럼 동사 음절을 포함하지만 지시와
+// 무관한 세법 고유명사만으로는 통과하지 않도록, 판정 전에 알려진 오탐 용어를 먼저 제거한다.
+const FEEDBACK_FALSE_POSITIVE_TERMS = ['수정신고']
+function hasActionableRevisionInstruction(feedback: string): boolean {
+    let stripped = feedback
+    for (const term of FEEDBACK_FALSE_POSITIVE_TERMS) stripped = stripped.split(term).join('')
+    return /(?:추가|수정|명시|구체화|보완|작성|제시|서술|설명)[^.!?]{0,10}(?:하세요|하십시오|하길|바랍니다|필요합니다|요망)/.test(stripped)
+}
+
 function testPureFunctions() {
     console.log('\n=== 순수 함수 단위 테스트 ===')
     const reqResult: any = {
@@ -1146,6 +1156,20 @@ async function main() {
             checks.push({
                 name: `물음 ${sq.number} "${rr.criterionName}" 근거 인용이 답안에 실존함`,
                 pass: segments.length > 0 && segments.every((seg) => normAns.includes(seg)),
+            })
+        }
+    }
+
+    // [공통, 모든 모드] 피드백 구체성 신호 확인 (미충족/부분충족 기준이 있는 경우)
+    for (const sq of result.subquestions) {
+        const hasUnmetOrPartial = sq.rubricResults.some(rr => {
+            const status = (rr as unknown as { status?: string }).status
+            return status === 'unmet' || status === 'partially_met'
+        })
+        if (hasUnmetOrPartial) {
+            checks.push({
+                name: `물음 ${sq.number} 피드백 구체성(실행 가능한 수정 지시문 포함) 확인`,
+                pass: hasActionableRevisionInstruction(sq.feedback),
             })
         }
     }
